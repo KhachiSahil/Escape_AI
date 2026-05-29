@@ -6,8 +6,8 @@ Real-time Voice AI customer support platform.
 
 ### Frontend
 
-* Next.js
-* TypeScript
+* React JS
+* Javascript
 * TailwindCSS
 
 ### Backend

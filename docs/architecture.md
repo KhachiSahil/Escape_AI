@@ -22,7 +22,7 @@ AI Services / Database
 main        → production-ready code
 dev         → integration/testing
 sahil-dev   → Sahil development branch
-teammate-dev → teammate branch
+vanshaj-dev → Vanshaj development branch
 ```
 
 ---
