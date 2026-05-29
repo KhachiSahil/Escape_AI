@@ -1,7 +1,7 @@
 # docs/architecture.md
 
 # Escape_AI Architecture
-
+ 
 ---
 
 ## Workflow Architecture
