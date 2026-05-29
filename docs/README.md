@@ -46,5 +46,6 @@ packages/
 See:
 
 ```txt id="afjm6e"
-docs/engineering/
+docs/architecture/
+docs/rules/
 ```
