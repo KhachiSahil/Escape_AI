@@ -1,122 +1,91 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import { useEffect, useRef } from 'react';
+import { useSelector, useDispatch } from 'react-redux';
+import VoiceSphere from './components/VoiceSphere';
+import { AudioProcessor } from './utils/audioProcessor';
+import { setIsRecording, setVolume, addLog } from './store';
 
 function App() {
-  const [count, setCount] = useState(0)
+  const dispatch = useDispatch();
+  const isRecording = useSelector((state) => state.audio.isRecording);
+  const volume = useSelector((state) => state.audio.volume);
+  
+  const audioProcessorRef = useRef(null);
+
+  useEffect(() => {
+    audioProcessorRef.current = new AudioProcessor({
+      onChunkSent: (log) => {
+        dispatch(addLog(log));
+        console.log(`[Redux Store Updated Log] ${log.timestamp} - ${log.size} bytes - ${log.status}`);
+      },
+      onVolumeChange: (vol) => {
+        dispatch(setVolume(vol));
+      },
+      onStateChange: (state) => {
+        dispatch(setIsRecording(state));
+      }
+    });
+
+    return () => {
+      if (audioProcessorRef.current) {
+        audioProcessorRef.current.stop();
+      }
+    };
+  }, [dispatch]);
+
+  const handleVoiceToggle = async () => {
+    if (!audioProcessorRef.current) return;
+
+    if (isRecording) {
+      audioProcessorRef.current.stop();
+    } else {
+      try {
+        await audioProcessorRef.current.start();
+      } catch (err) {
+        alert('Could not access microphone. Please allow permissions and try again.');
+      }
+    }
+  };
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
+    <div className="relative flex flex-col justify-between w-screen h-screen min-h-0 p-5 md:p-8 bg-[#04060a] text-gray-100 font-sans overflow-hidden select-none before:content-[''] before:absolute before:inset-0 before:bg-[linear-gradient(rgba(255,255,255,0.012)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.012)_1px,transparent_1px)] before:bg-[size:32px_32px] before:bg-center before:[mask-image:radial-gradient(circle_at_center,black_30%,transparent_75%)] before:pointer-events-none before:z-0">
+      
+      {/* Top minimal header */}
+      <header className="relative z-10 flex justify-between items-center border-b border-white/10 pb-4 flex-shrink-0">
+        <div className="flex items-center gap-3 group">
+          <span className="text-base md:text-lg text-indigo-400 animate-pulse font-bold">▲</span>
+          <span className="font-heading text-lg md:text-xl lg:text-2xl font-extrabold tracking-[0.3em] bg-clip-text text-transparent bg-gradient-to-r from-white via-gray-100 to-indigo-200 drop-shadow-md">
+            ESCAPE AI
+          </span>
         </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
+        <span className="flex items-center gap-2 text-[0.65rem] md:text-xs font-semibold tracking-wider text-gray-400 bg-white/5 px-3 py-1.5 rounded-full border border-white/5">
+          <span className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${
+            isRecording ? 'bg-indigo-400 shadow-[0_0_12px_#818cf8]' : 'bg-gray-600'
+          }`} />
+          {isRecording ? 'STREAMING ACTIVE' : 'SECURE LINE'}
+        </span>
+      </header>
+
+      {/* Main Focus Visualizer Zone */}
+      <main className="relative z-10 flex flex-col items-center justify-center flex-grow min-h-0 gap-6 my-4">
+        <VoiceSphere 
+          isRecording={isRecording}
+          volume={volume}
+          onClick={handleVoiceToggle}
+        />
+        
+        <div className="text-center max-w-[320px] sm:max-w-[420px] px-4 flex-shrink-0">
+          <h1 className="font-heading text-xl sm:text-3xl md:text-4xl font-semibold tracking-tight text-white mb-2">
+            {isRecording ? 'Listening' : 'Ready'}
+          </h1>
+          <p className="text-xs sm:text-sm text-gray-400 leading-relaxed font-medium">
+            {isRecording 
+              ? 'Voice data is packaged into 10s chunks silently using Axios & Redux' 
+              : 'Tap the sphere to initiate real-time conversational streaming'}
           </p>
         </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+      </main>
+    </div>
+  );
 }
 
-export default App
+export default App;
