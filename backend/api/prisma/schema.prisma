@@ -1,0 +1,125 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  SALES_EMPLOYEE
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  ON_LEAVE
+  INACTIVE
+}
+
+enum LeadStatus {
+  NEW
+  QUALIFIED
+  CALLBACK_SCHEDULED
+  ESCALATED
+  CONVERTED
+  LOST
+  DORMANT
+}
+
+enum LeadPriority {
+  P1
+  P2
+  P3
+  P4
+}
+
+enum CallType {
+  AI_OUTBOUND
+  AI_INBOUND
+  HUMAN
+}
+
+model Employee {
+  id             String         @id @default(cuid())
+  name           String
+  email          String         @unique
+  passwordHash   String
+  role           Role
+  status         EmployeeStatus @default(ACTIVE)
+  lastAssignedAt DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  assignedLeads Lead[]
+  escalations   Escalation[]
+}
+
+model Lead {
+  id                 String        @id @default(cuid())
+  name               String?
+  phone              String
+  email              String?
+  profession         String?
+  experienceLevel    String?
+  courseInterested   String?
+  budget             String?
+  leadSource         String        @default("ai_call")
+  status             LeadStatus    @default(NEW)
+  priority           LeadPriority?
+  leadScore          String?
+  intent             String?
+  urgency            String?
+  sentiment          String?
+  notes              String?
+  language           String?
+  nextFollowUp       DateTime?
+  humanRequired      Boolean       @default(false)
+  escalationReason   String?
+  assignedEmployeeId String?
+  assignedEmployee   Employee?     @relation(fields: [assignedEmployeeId], references: [id])
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  calls       Call[]
+  escalations Escalation[]
+
+  @@index([status])
+  @@index([assignedEmployeeId])
+  @@index([phone])
+}
+
+model Call {
+  id              String   @id @default(cuid())
+  leadId          String
+  lead            Lead     @relation(fields: [leadId], references: [id])
+  callType        CallType
+  shortSummary    String?
+  detailedSummary String?
+  keyPoints       String?
+  intent          String?
+  urgency         String?
+  sentiment       String?
+  durationSeconds Int?
+  recordingUrl    String?
+  createdAt       DateTime @default(now())
+
+  @@index([leadId])
+}
+
+model Escalation {
+  id                 String    @id @default(cuid())
+  leadId             String
+  lead               Lead      @relation(fields: [leadId], references: [id])
+  reason             String
+  summary            String?
+  assignedEmployeeId String?
+  assignedEmployee   Employee? @relation(fields: [assignedEmployeeId], references: [id])
+  status             String    @default("assigned")
+  createdAt          DateTime  @default(now())
+
+  @@index([leadId])
+  @@index([assignedEmployeeId])
+}

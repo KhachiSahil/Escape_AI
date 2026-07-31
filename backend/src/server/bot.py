@@ -18,6 +18,7 @@ from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 from pipecat.workers.runner import WorkerRunner
 
 import config
+import tools.leads as leads
 from prompts import build_system_prompt
 from tools import register_all_tools, tools_schema
 
@@ -84,6 +85,11 @@ async def run_bot(transport: BaseTransport):
     @transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport, client):
         logger.info("Client disconnected")
+        if leads.current_lead_id:
+            await leads.log_call_summary(
+                lead_id=leads.current_lead_id,
+                call_type="AI_INBOUND",
+            )
         await worker.cancel()
 
     runner = WorkerRunner(handle_sigint=False)

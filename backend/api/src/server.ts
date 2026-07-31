@@ -1,0 +1,32 @@
+import cors from "cors";
+import express from "express";
+import pinoHttp from "pino-http";
+
+import { config } from "./config";
+import { errorHandler } from "./middleware/errorHandler";
+import { authRouter } from "./routes/auth.routes";
+import { callsRouter } from "./routes/calls.routes";
+import { employeesRouter } from "./routes/employees.routes";
+import { escalationsRouter } from "./routes/escalations.routes";
+import { leadsRouter } from "./routes/leads.routes";
+
+const app = express();
+
+app.use(cors());
+app.use(express.json());
+app.use(pinoHttp());
+
+app.get("/health", (_req, res) => res.json({ status: "ok" }));
+
+app.use("/api/auth", authRouter);
+app.use("/api/leads", leadsRouter);
+app.use("/api/calls", callsRouter);
+app.use("/api/escalations", escalationsRouter);
+app.use("/api/employees", employeesRouter);
+
+app.use(errorHandler);
+
+app.listen(config.port, () => {
+  // eslint-disable-next-line no-console
+  console.log(`CRM API listening on port ${config.port}`);
+});

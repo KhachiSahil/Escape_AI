@@ -1,12 +1,28 @@
 from pipecat.adapters.schemas.tools_schema import ToolsSchema
-from tools.tickets import create_followup, create_followup_function
+
+from tools.leads import (
+    create_lead,
+    create_lead_function,
+    request_human_escalation,
+    request_human_escalation_function,
+    schedule_callback,
+    schedule_callback_function,
+    update_lead,
+    update_lead_function,
+)
 
 TOOLS = [
-    create_followup_function,
+    create_lead_function,
+    update_lead_function,
+    schedule_callback_function,
+    request_human_escalation_function,
 ]
 
 HANDLERS = {
-    "create_followup": create_followup,
+    "create_lead": create_lead,
+    "update_lead": update_lead,
+    "schedule_callback": schedule_callback,
+    "request_human_escalation": request_human_escalation,
 }
 
 tools_schema = ToolsSchema(standard_tools=TOOLS)
