@@ -21,10 +21,28 @@ than rewriting history.
   `FOR UPDATE SKIP LOCKED` query, scoped to `role = 'SALES_EMPLOYEE' AND
   status = 'ACTIVE'`, so concurrent escalations can't double-assign the same
   employee, can't starve anyone, and never assign to Admin/Manager accounts.
-  Verified running end-to-end against the real database (migrations,
-  seed, live HTTP + live voice-call round-trip) as of 2026-08-02.
-- **`frontend/`** — Stock Vite + React 19 template, not yet built out. No
-  dashboard UI exists yet (see Deferred below).
+  A Socket.IO server (`src/realtime/socket.ts`) attached to the same HTTP
+  server pushes `lead:updated`/`escalation:created`/`call:logged` events to
+  JWT-authenticated clients, room-scoped per employee (`employee:{id}`) and
+  a shared `role:admin` room for ADMIN/MANAGER. `src/services/analyticsService.ts`
+  + `/api/analytics/*` expose dashboard aggregates derived only from fields
+  that actually exist in the schema (no fabricated revenue/missed-call
+  metrics — see the 2c entry below). Verified running end-to-end against the
+  real database (migrations, seed, live HTTP + live voice-call round-trip)
+  as of 2026-08-02.
+- **`frontend/`** — React 19 + TypeScript CRM dashboard (Vite, React Router,
+  React Query, Tailwind v4). JWT auth (bearer token, sessionStorage-backed).
+  Shared `AppLayout` with role-aware nav wraps all authenticated routes.
+  Employee-facing: `/leads` (own assigned leads for SALES_EMPLOYEE, all
+  leads for ADMIN/MANAGER, with a score filter/sort), `/leads/:id` (call/
+  escalation history, editable status/notes for the assigned employee or
+  any admin/manager). Admin-only (`/admin/*`, role-gated): `/admin/employees`
+  (list + status toggle + performance numbers), `/admin/analytics` (charts
+  using the `dataviz` skill's validated categorical palette + recharts),
+  `/admin/escalations` (read-only queued-escalation visibility). A
+  Socket.IO client (`useRealtimeSync`, mounted in `AppLayout`) invalidates
+  the relevant React Query caches on `lead:updated`/`escalation:created`/
+  `call:logged` events pushed from the backend.
 
 ## Change Log
 
@@ -230,4 +248,141 @@ attempted in one pass):**
 - **Phase 2f:** Hardening — the Neon transaction-pooling issue above, secret
   rotation (current `JWT_SECRET`/`SERVICE_API_KEY` are simple placeholders,
   fine for local dev, not for production), rate limiting, input
-  sanitization audit, test coverage, CI.
+  sanitization audit, test coverage, CI, and httpOnly-cookie auth (see 2b/2c
+  entry below for why it was deferred rather than built alongside 2c/2d/2e).
+
+### 2026-08-02 — Phases 2b–2e: full frontend, admin dashboard, real-time, richer summaries
+
+**Context:** User asked to build the rest of the original platform spec in
+one continuous session — frontend (2b), admin dashboard + analytics (2c),
+real-time updates (2d), and expanded tools/richer call summaries (2e) —
+sequenced but committed as separate milestones, plus pulling forward
+cheap/high-value hardening while deferring rate limiting/test suites/CI to
+Phase 2f.
+
+**Hardening (landed first, before 2c):**
+- **`PATCH /api/employees/:id/status` passwordHash leak** — was returning
+  the full Prisma row (unlike the list endpoint, which already used
+  `select`). Added the missing `select` clause.
+- **SALES_EMPLOYEE couldn't edit their own assigned leads** —
+  `PATCH /api/leads/:id` was ADMIN/MANAGER only. Changed to any
+  authenticated role, with an ownership check in `leadService.updateLead`
+  (employees can only update leads assigned to them, and can't reassign via
+  the request body — that field is silently stripped for non-admin actors).
+  Frontend's edit-gate on `LeadDetailPage` relaxed to match.
+- **React ErrorBoundary** added at the app root (`main.tsx`) so a render
+  crash shows a recoverable screen instead of a blank page.
+- **httpOnly-cookie auth — explicitly NOT built**, deferred to Phase 2f.
+  Would require `cookie-parser`, a CORS change from allow-all to an
+  explicit origin + `credentials: true`, a `res.cookie` login response, a
+  new logout endpoint, `middleware/auth.ts` reading cookies, every frontend
+  fetch needing `credentials: 'include'`, and a more complex Socket.IO auth
+  handshake (cookie auth doesn't fit the standard
+  `socket.handshake.auth.token` pattern cleanly) — too much cross-cutting
+  surface to land safely alongside 2c/2d/2e's scope, with the existing
+  sessionStorage-JWT already working end-to-end.
+
+**Phase 2b — Frontend bootstrap:**
+- `frontend/` migrated from the stock Vite+React JS template to TypeScript
+  (React Router, React Query, Tailwind v4 via `@tailwindcss/vite`).
+- JWT auth: `AuthContext` (sessionStorage-persisted `{token, employee}`),
+  a typed `fetch` wrapper (`lib/api.ts`) that attaches the bearer token and
+  triggers logout on any 401, `RequireAuth` route guard (optional
+  role-scoping).
+- First real screens: login, assigned-leads list (role-scoped), lead detail
+  (call/escalation history + edit form).
+
+**Phase 2c — Admin dashboard + analytics:**
+- New backend: `analyticsService.ts` + `GET /api/analytics/overview` +
+  `GET /api/analytics/employee-performance` (ADMIN/MANAGER only), plus
+  `GET /api/escalations?status=queued` extending the existing escalations
+  router. Every metric is derived only from fields that actually exist:
+  lead pipeline/source/course distribution, call duration, conversion rate
+  (both a resolved-only and an overall formula, both labeled), sentiment
+  distribution (labeled as data-quality-limited — `Call.sentiment` is
+  free-text, not an enum, so near-duplicate values fragment), and a
+  follow-up-success proxy metric (also labeled as an approximation).
+  **Revenue forecast and missed-call metrics were deliberately omitted** —
+  no deal-value field or call-attempt-outcome concept exists anywhere in
+  the schema, and fabricating numbers for them would be worse than not
+  having the chart.
+- New frontend: shared `AppLayout` (role-aware nav, replaces the
+  per-page header chrome from 2b), `/admin/employees` (list + status
+  toggle + inline performance), `/admin/analytics` (charts via `recharts`,
+  built following the `dataviz` skill's procedure — form-first, then the
+  skill's validated categorical palette run through its CVD/contrast
+  validator before use, not hand-picked colors), `/admin/escalations`
+  (read-only queue view — no reassignment mutation yet, not needed until
+  the page reveals it's actually wanted). Leads list also gained a
+  score filter + sort-by-score toggle (the "lead scoring surfaced in
+  dashboard" item from the 2a roadmap — no new backend scoring logic, just
+  client-side sort/filter on already-fetched data).
+
+**Phase 2d — Real-time layer:**
+- Backend: `server.ts` restructured to attach Socket.IO to the same
+  `http.Server` Express uses. JWT-authenticated handshake
+  (`socket.handshake.auth.token`, same `jwt.verify`/secret as REST). Room
+  design: `employee:{id}` per socket, plus a shared `role:admin` room for
+  both ADMIN and MANAGER (matching every existing `requireAuth` check in
+  this codebase, which already treats those two roles as one privilege
+  tier — no precedent anywhere for splitting them, so this didn't either).
+  Three mutation points emit events reusing exactly the REST response
+  shapes (no new payload fields invented): `escalationService.createEscalation`
+  → `escalation:created`, `leadService.updateLead` → `lead:updated`,
+  `callService.createCall` → `call:logged`.
+- Frontend: `lib/socket.ts` (module-level singleton, mirrors `lib/api.ts`'s
+  token-tracking pattern) + `useRealtimeSync` (mounted once in `AppLayout`)
+  invalidates the relevant React Query keys on each event — refetch rather
+  than manually splicing the payload into the cache, simpler and
+  self-correcting for this first real-time pass.
+- Verified: a temporary `socket.io-client` test script confirmed both an
+  admin session and the specific assigned employee's session receive a
+  `lead:updated` event after a real `PATCH`.
+
+**Phase 2e — Richer call summaries + `finalize_call_summary` tool:**
+- Schema (additive migration `20260802165424_add_call_summary_fields`): 6
+  new nullable `Call` columns — `goals`, `painPoints`, `nextSteps`,
+  `buyingSignals`, `objections`, `recommendedAction` — free text, matching
+  how `keyPoints`/`detailedSummary` are already modeled (no structured
+  sub-schema forced onto LLM-generated prose).
+- **Fixed a pre-existing gap while adding these**: `log_call_summary` was
+  only ever called from `bot.py`'s `on_client_disconnected` with hardcoded
+  `None` for every summary field — they were never actually populated by
+  anything. Added `finalize_call_summary` as a new LLM-invoked tool
+  (`tools/leads.py`, same `FunctionSchema` pattern as `create_lead`/
+  `update_lead`) that the agent calls when it senses the conversation
+  wrapping up, passing real values. The disconnect-time `log_call_summary`
+  call is now an explicit fallback guarded by a `call_summary_finalized`
+  flag — only fires if the LLM never got a chance to call the new tool
+  (e.g. an abrupt disconnect), so a call record is still logged rather than
+  lost entirely, just without the richer fields.
+- `prompts.py` gained an "Ending the call" section instructing the agent to
+  call `finalize_call_summary` once, honestly, before saying goodbye.
+- **Transcript capture (originally scoped as part of 2e) was explicitly
+  skipped this pass, by user decision** — the installed `pipecat_ai==1.3.0`
+  has no `TranscriptProcessor` class anywhere in the package (confirmed by
+  exhaustive search, not assumed); building one from scratch or upgrading
+  pipecat was judged out of scope for this session. `Call.transcript`
+  (added in Phase 2a) remains unpopulated. Revisit as its own focused task.
+- Lead-scoring automation: no new backend logic, per the already-settled
+  2a decision — see the 2c entry above for where this actually landed
+  (frontend sort/filter).
+
+**Bug found and fixed during 2c live verification (not in the original
+plan):** none this round beyond what's listed above — the 2a session's
+round-robin role-scoping bug was the one caught by live testing; this
+round's curl/script verification at each milestone didn't surface new ones.
+
+**Known limitations carried forward, unchanged:** the Neon transaction-pool
+timeout under heavy concurrent load (2a entry) and httpOnly-cookie auth
+(this entry) both remain deferred to Phase 2f.
+
+**Verified this session:** every milestone's backend half was curl/script-
+tested against the live Neon-backed API before its frontend counterpart was
+built (analytics endpoints, escalation queue, Socket.IO event delivery via
+a temporary test script, the 6 new Call fields via a direct POST). Frontend
+builds/typechecks/lints clean at every milestone. Full interactive browser
+verification (charts rendering, live cross-tab updates, a real voice call
+exercising `finalize_call_summary`) is the user's to do at their own pace —
+flagged here rather than claimed as done without having actually watched it
+happen.
