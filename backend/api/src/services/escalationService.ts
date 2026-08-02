@@ -1,6 +1,7 @@
 import { Employee, Prisma } from "@prisma/client";
 
 import { prisma } from "../db";
+import { ADMIN_ROOM, employeeRoom, getIO } from "../realtime/socket";
 
 type Tx = Prisma.TransactionClient;
 
@@ -40,7 +41,7 @@ export function listEscalations(filters: { status?: string } = {}) {
 }
 
 export async function createEscalation(input: { leadId: string; reason: string; summary?: string }) {
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const employee = await pickNextEmployee(tx);
 
     const escalation = await tx.escalation.create({
@@ -65,4 +66,12 @@ export async function createEscalation(input: { leadId: string; reason: string; 
 
     return { escalation, assignedEmployee: employee };
   });
+
+  const io = getIO();
+  io.to(ADMIN_ROOM).emit("escalation:created", result.escalation);
+  if (result.assignedEmployee) {
+    io.to(employeeRoom(result.assignedEmployee.id)).emit("escalation:created", result.escalation);
+  }
+
+  return result;
 }

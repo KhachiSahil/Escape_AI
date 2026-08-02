@@ -1,9 +1,12 @@
+import { createServer } from "http";
+
 import cors from "cors";
 import express from "express";
 import pinoHttp from "pino-http";
 
 import { config } from "./config";
 import { errorHandler } from "./middleware/errorHandler";
+import { initSocket } from "./realtime/socket";
 import { analyticsRouter } from "./routes/analytics.routes";
 import { authRouter } from "./routes/auth.routes";
 import { callsRouter } from "./routes/calls.routes";
@@ -28,7 +31,10 @@ app.use("/api/analytics", analyticsRouter);
 
 app.use(errorHandler);
 
-app.listen(config.port, () => {
+const httpServer = createServer(app);
+initSocket(httpServer);
+
+httpServer.listen(config.port, () => {
   // eslint-disable-next-line no-console
   console.log(`CRM API listening on port ${config.port}`);
 });

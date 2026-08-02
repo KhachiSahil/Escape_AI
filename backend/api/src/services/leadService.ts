@@ -2,6 +2,7 @@ import { Prisma, Role } from "@prisma/client";
 
 import { prisma } from "../db";
 import { HttpError } from "../middleware/errorHandler";
+import { ADMIN_ROOM, employeeRoom, getIO } from "../realtime/socket";
 
 export interface Actor {
   id: string;
@@ -52,14 +53,23 @@ export async function updateLead(
     payload = rest;
   }
 
+  let updated;
   try {
-    return await prisma.lead.update({ where: { id }, data: payload });
+    updated = await prisma.lead.update({ where: { id }, data: payload });
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
       throw new HttpError(404, "Lead not found");
     }
     throw err;
   }
+
+  const io = getIO();
+  io.to(ADMIN_ROOM).emit("lead:updated", updated);
+  if (updated.assignedEmployeeId) {
+    io.to(employeeRoom(updated.assignedEmployeeId)).emit("lead:updated", updated);
+  }
+
+  return updated;
 }
 
 export async function scheduleCallback(id: string, callbackTime: Date, notes?: string) {
