@@ -1,69 +1,74 @@
 import { z } from "zod";
 
+// Short identity/label fields - names, categories, single-word/short-phrase values.
+const shortText = () => z.string().trim().max(255);
+// Long-form free text mapped to @db.Text columns (summaries, notes).
+const longText = () => z.string().trim().max(5000);
+
 export const loginSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(1),
+  email: z.string().trim().email().max(255),
+  password: z.string().min(1).max(255),
 });
 
 export const createLeadSchema = z.object({
-  name: z.string().optional(),
-  phone: z.string().min(1),
-  email: z.string().email().optional(),
-  profession: z.string().optional(),
-  experienceLevel: z.string().optional(),
-  courseInterested: z.string().optional(),
-  budget: z.string().optional(),
-  leadSource: z.string().optional(),
+  name: shortText().optional(),
+  phone: z.string().trim().min(1).max(30),
+  email: z.string().trim().email().max(255).optional(),
+  profession: shortText().optional(),
+  experienceLevel: shortText().optional(),
+  courseInterested: shortText().optional(),
+  budget: shortText().optional(),
+  leadSource: shortText().optional(),
 });
 
 export const updateLeadSchema = z.object({
-  name: z.string().optional(),
-  email: z.string().email().optional(),
-  profession: z.string().optional(),
-  experienceLevel: z.string().optional(),
-  courseInterested: z.string().optional(),
-  budget: z.string().optional(),
+  name: shortText().optional(),
+  email: z.string().trim().email().max(255).optional(),
+  profession: shortText().optional(),
+  experienceLevel: shortText().optional(),
+  courseInterested: shortText().optional(),
+  budget: shortText().optional(),
   status: z
     .enum(["NEW", "QUALIFIED", "CALLBACK_SCHEDULED", "ESCALATED", "CONVERTED", "LOST", "DORMANT"])
     .optional(),
   priority: z.enum(["P1", "P2", "P3", "P4"]).optional(),
   leadScore: z.enum(["HOT", "WARM", "COLD", "VERY_HOT", "LOST", "DORMANT", "RE_ENGAGE"]).optional(),
-  intent: z.string().optional(),
-  urgency: z.string().optional(),
-  sentiment: z.string().optional(),
-  notes: z.string().optional(),
-  language: z.string().optional(),
-  assignedEmployeeId: z.string().optional(),
+  intent: shortText().optional(),
+  urgency: shortText().optional(),
+  sentiment: shortText().optional(),
+  notes: longText().optional(),
+  language: shortText().optional(),
+  assignedEmployeeId: z.string().cuid().optional(),
 });
 
 export const scheduleCallbackSchema = z.object({
   callbackTime: z.coerce.date(),
-  notes: z.string().optional(),
+  notes: longText().optional(),
 });
 
 export const createCallSchema = z.object({
-  leadId: z.string().min(1),
+  leadId: z.string().cuid(),
   callType: z.enum(["AI_OUTBOUND", "AI_INBOUND", "HUMAN"]),
-  shortSummary: z.string().optional(),
-  detailedSummary: z.string().optional(),
-  keyPoints: z.string().optional(),
-  intent: z.string().optional(),
-  urgency: z.string().optional(),
-  sentiment: z.string().optional(),
-  durationSeconds: z.number().int().optional(),
-  recordingUrl: z.string().optional(),
-  goals: z.string().optional(),
-  painPoints: z.string().optional(),
-  nextSteps: z.string().optional(),
-  buyingSignals: z.string().optional(),
-  objections: z.string().optional(),
-  recommendedAction: z.string().optional(),
+  shortSummary: shortText().optional(),
+  detailedSummary: longText().optional(),
+  keyPoints: longText().optional(),
+  intent: shortText().optional(),
+  urgency: shortText().optional(),
+  sentiment: shortText().optional(),
+  durationSeconds: z.number().int().min(0).optional(),
+  recordingUrl: z.string().trim().url().max(2048).optional(),
+  goals: longText().optional(),
+  painPoints: longText().optional(),
+  nextSteps: longText().optional(),
+  buyingSignals: longText().optional(),
+  objections: longText().optional(),
+  recommendedAction: longText().optional(),
 });
 
 export const createEscalationSchema = z.object({
-  leadId: z.string().min(1),
-  reason: z.string().min(1),
-  summary: z.string().optional(),
+  leadId: z.string().cuid(),
+  reason: shortText().min(1),
+  summary: longText().optional(),
 });
 
 export const updateEmployeeStatusSchema = z.object({
