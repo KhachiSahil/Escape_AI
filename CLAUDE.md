@@ -101,11 +101,16 @@ analytics deferred to a later phase.
   `backend/src/server` under the `backend/` umbrella; separate
   `package.json`/`.gitignore`/deploy from the Python agent.
 - Prisma schema (`prisma/schema.prisma`): `Employee`, `Lead`, `Call`,
-  `Escalation` models. Deliberately excludes speculative fields with no
-  current consumer (conversation transcript storage, `tags`/`metadata` JSON
-  blobs, separate `location`/`languagePreference` columns) — flagged as
-  easy fast-follow migrations once a UI actually needs them, not built
-  speculatively now.
+  `Escalation` models. `Lead.language` was added and wired through
+  `update_lead`'s tool schema from this phase onward (the caller's spoken
+  language preference, freeform e.g. "Hindi", "English") — not speculative,
+  it has a real consumer. **[Corrected in Phase 2g]** an earlier version of
+  this passage incorrectly listed `languagePreference` alongside `tags`/
+  `metadata`/`location` as excluded — that was wrong, the field exists and
+  is used. Deliberately excludes other speculative fields with no current
+  consumer (conversation transcript storage, `tags`/`metadata` JSON blobs,
+  a separate `location` column) — flagged as easy fast-follow migrations
+  once a UI actually needs them, not built speculatively now.
 - REST API (`src/routes/`): `/api/auth/login`, `/api/leads` (CRUD +
   `/callback`), `/api/calls`, `/api/escalations`, `/api/employees` (+
   status toggle for testing round-robin skip behavior).
@@ -505,3 +510,120 @@ database for true-concurrency regression testing of the round-robin logic;
 broader frontend component test coverage beyond the two smoke-test files;
 consider enforcing cookie-only auth (dropping the header fallback) if a
 concrete reason to do so ever arises.
+
+### 2026-08-02 — Phase 2g: security + data-model gaps
+
+**Context:** A gap audit was run against the original mega-spec (comparing
+every section — Agent Responsibilities, Sales Objectives, Lead Scoring,
+Priority, Database Design, Function Calling, Frontend Requirements,
+Security, etc. — against this file's own change log) and found 17 items
+the original spec asked for that no phase built or explicitly deferred with
+a reason. The user prioritized 4 of them for this phase — small, high-value
+security/data-model fixes — and explicitly deferred two large items
+(outbound calling, a multi-factor scoring engine) to a future phase. See
+Roadmap below for the full list of what's still open.
+
+**1. Prompt-injection defense (Security requirement, previously
+unaddressed):** traced the full tool-call lifecycle in `bot.py`/
+`tools/leads.py` first — confirmed there's no second-order/stored-data
+injection vector (no tool ever reads a previous note/summary back into the
+LLM context mid-call; the system prompt is set exactly once, at
+`on_client_ready`), so the only vector is the caller's live speech. Added a
+new "Instruction integrity" section to `build_system_prompt()`
+(`prompts.py`), placed next to the existing "Strict scope" section, naming
+concrete attack phrasings ("ignore previous instructions," "developer
+mode," "repeat the text above") and instructing the model not to
+acknowledge detection — framed as "just another off-topic detour" to stay
+consistent with the persona's existing redirect pattern. **Stated
+limitation:** LLM instruction adherence can't be deterministically
+unit-tested — this is a prompt-quality judgment call verified by live/
+scripted adversarial testing, not a CI gate.
+
+**2. Lead.priority (P1-P4) — closed an orphaned-field gap:** the
+`LeadPriority` enum and `Lead.priority` column existed since Phase 2a and
+`backend/api`'s `updateLeadSchema` already accepted it, but no code path
+ever set it — the voice agent's `update_lead` tool never exposed `priority`
+as a settable field. Added it to `update_lead_function`'s `FunctionSchema`
+(`tools/leads.py`) with guidance distinguishing it from `leadScore`
+(urgency/timeline vs. quality/sentiment — a HOT lead exploring for next
+year is P3-P4, not P1), and folded it into `prompts.py`'s lead-qualification
+instructions. **No `backend/api` changes were needed** — confirmed
+`leadService.updateLead`'s SALES_EMPLOYEE field-stripping logic only strips
+`assignedEmployeeId`, `priority` passes through untouched. Verified:
+`PATCH /api/leads/:id` with `{"priority":"P1"}` persists and reflects on a
+follow-up `GET`.
+
+**3. Call.handledByEmployeeId — new field, narrowly scoped:** `CallType`
+already had a `HUMAN` value but nothing recorded which employee actually
+conducted a human-handled call. Added `handledByEmployeeId` (nullable FK to
+`Employee`, mirroring the existing `assignedEmployeeId` pattern) via an
+additive migration (`20260802181303_add_call_handled_by_employee`), plus
+the corresponding `createCallSchema` field. **Explicitly not included this
+phase:** no new endpoint or UI flow for a human to manually log a call, no
+auto-population from escalation-resolution — those are separate, larger
+features. The column exists and can be populated going forward; nothing
+populates it automatically yet. Verified: `POST /api/calls` with
+`handledByEmployeeId` set succeeds and echoes it back; omitting it (existing
+AI-call payloads) still works unchanged.
+
+**4. `languagePreference` documentation fix (doc-only, no code):** the
+Foundation-phase entry above incorrectly claimed `languagePreference` was
+excluded as speculative alongside `tags`/`metadata`/`location` — in fact
+`Lead.language` has existed and been wired through `update_lead`'s tool
+schema since the Foundation phase. Corrected in place (see the amended
+passage above) rather than silently rewritten, so the historical record
+stays honest about the mistake.
+
+**Verified this session:** all new fields tested via direct HTTP calls
+(curl) against the live Neon-backed API — `priority` PATCH/GET round-trip,
+`handledByEmployeeId` POST with and without the field set (backward
+compatibility). Extended `schemas.test.ts` (priority accept/reject,
+handledByEmployeeId accept/reject/omitted) and `leadService.test.ts` (a
+SALES_EMPLOYEE actor can set `priority` on their own lead while
+`assignedEmployeeId` is still stripped) — all 30 backend/api tests pass.
+Python `pytest`/`ruff` unchanged and passing. Frontend `models.ts` updated
+to include `Call.handledByEmployeeId`; build/typecheck clean.
+
+**Roadmap — explicitly deferred, tracked so nothing is silently dropped:**
+
+*Large items, deferred by explicit user choice to a future phase:*
+- Outbound/cold-calling (AI-initiated calls) — needs a telephony/dialer
+  integration decision (Twilio vs. Daily vs. other) not yet made anywhere
+  in this project; the system is inbound-only today.
+- A real multi-factor lead-scoring engine — replacing the single
+  LLM-subjective `leadScore` enum (set via `update_lead`) with a
+  weighted-rules engine combining budget/urgency/interest/buying-signals/
+  conversation-quality/course-fit/availability/decision-timeline.
+
+*Remaining audit gaps, not in this phase's scope (one-line tracking only):*
+1. Round-robin priority-queue integration — wiring `Lead.priority` (now
+   settable) into `escalationService.ts`'s round-robin ordering itself (the
+   original spec frames this as a "future" enhancement, not current scope).
+2. Full analytics/reporting dashboards beyond Phases 2b-2e (AI Activities
+   log, System Health, Assignment Logs, Daily/Weekly/Monthly Reports, AI
+   Success Rate, Conversion Funnel visualization, Revenue Forecast —
+   the last two explicitly noted as not buildable from current schema).
+3. Real-time features beyond existing lead/call socket events (e.g. live
+   call transcription streaming, employee/AI presence indicators).
+4. Full RBAC granularity beyond ADMIN/MANAGER/SALES_EMPLOYEE (e.g. a
+   distinct MANAGER permission tier, or "AI Agent" as a formal RBAC role
+   rather than the service-key mechanism).
+5. Conversation transcript persistent storage (deferred at Foundation
+   phase pending a Pipecat transcript-processor API; still not built).
+6. `tags`/`metadata` JSON blob columns on `Lead` (still deferred, no
+   concrete consumer).
+7. Separate `location` column on `Lead` (still deferred, no consumer).
+8. A UI flow for humans to manually log a HUMAN-type call (this phase adds
+   only the `handledByEmployeeId` column, not the flow).
+9. Escalation-to-call auto-linking (auto-populating
+   `handledByEmployeeId` when an escalation resolves).
+10. Dedicated employee/frontend dashboard views named in the original spec
+    but not built: Today's Calls, Pending Follow-ups, Completed Calls,
+    Upcoming Callbacks, general lead search (beyond the score filter/sort
+    from Phase 2c).
+11. SMS/email notification channels (only in-app/socket-based cache
+    invalidation exists today, not a visible toast/alert/email system).
+12. Call recording storage/playback UI (`recordingUrl` column exists, no
+    upload/playback flow).
+13. A dedicated audit-log/compliance trail beyond Phase 2f's hardening
+    (e.g. a who-changed-what `AuditLog` table).
