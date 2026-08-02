@@ -41,31 +41,37 @@ export function listEscalations(filters: { status?: string } = {}) {
 }
 
 export async function createEscalation(input: { leadId: string; reason: string; summary?: string }) {
-  const result = await prisma.$transaction(async (tx) => {
-    const employee = await pickNextEmployee(tx);
+  const result = await prisma.$transaction(
+    async (tx) => {
+      const employee = await pickNextEmployee(tx);
 
-    const escalation = await tx.escalation.create({
-      data: {
-        leadId: input.leadId,
-        reason: input.reason,
-        summary: input.summary,
-        assignedEmployeeId: employee?.id,
-        status: employee ? "assigned" : "queued",
-      },
-    });
+      const escalation = await tx.escalation.create({
+        data: {
+          leadId: input.leadId,
+          reason: input.reason,
+          summary: input.summary,
+          assignedEmployeeId: employee?.id,
+          status: employee ? "assigned" : "queued",
+        },
+      });
 
-    await tx.lead.update({
-      where: { id: input.leadId },
-      data: {
-        humanRequired: true,
-        status: "ESCALATED",
-        escalationReason: input.reason,
-        assignedEmployeeId: employee?.id,
-      },
-    });
+      await tx.lead.update({
+        where: { id: input.leadId },
+        data: {
+          humanRequired: true,
+          status: "ESCALATED",
+          escalationReason: input.reason,
+          assignedEmployeeId: employee?.id,
+        },
+      });
 
-    return { escalation, assignedEmployee: employee };
-  });
+      return { escalation, assignedEmployee: employee };
+    },
+    // Explicit timeouts (beyond Prisma's 2s/5s defaults) as insurance beyond
+    // the non-pooled DATABASE_URL fix - cheap to add, no downside at this
+    // app's traffic volume.
+    { maxWait: 5000, timeout: 10000 },
+  );
 
   const io = getIO();
   io.to(ADMIN_ROOM).emit("escalation:created", result.escalation);
