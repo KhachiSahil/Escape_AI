@@ -1,10 +1,22 @@
 import { Router } from "express";
 
-import { requireServiceKey } from "../middleware/auth";
+import { requireAuth, requireServiceKey } from "../middleware/auth";
 import * as escalationService from "../services/escalationService";
 import { createEscalationSchema } from "../validation/schemas";
 
 export const escalationsRouter = Router();
+
+escalationsRouter.get("/", requireAuth("ADMIN", "MANAGER"), async (req, res, next) => {
+  try {
+    const { status } = req.query;
+    const escalations = await escalationService.listEscalations({
+      status: typeof status === "string" ? status : undefined,
+    });
+    res.json(escalations);
+  } catch (err) {
+    next(err);
+  }
+});
 
 escalationsRouter.post("/", requireServiceKey, async (req, res, next) => {
   try {

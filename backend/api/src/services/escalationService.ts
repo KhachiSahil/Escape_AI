@@ -31,6 +31,14 @@ async function pickNextEmployee(tx: Tx): Promise<Employee | null> {
   return employee;
 }
 
+export function listEscalations(filters: { status?: string } = {}) {
+  return prisma.escalation.findMany({
+    where: filters.status ? { status: filters.status } : undefined,
+    include: { lead: true, assignedEmployee: true },
+    orderBy: { createdAt: "asc" },
+  });
+}
+
 export async function createEscalation(input: { leadId: string; reason: string; summary?: string }) {
   return prisma.$transaction(async (tx) => {
     const employee = await pickNextEmployee(tx);

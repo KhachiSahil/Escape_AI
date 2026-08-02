@@ -4,6 +4,7 @@ import pinoHttp from "pino-http";
 
 import { config } from "./config";
 import { errorHandler } from "./middleware/errorHandler";
+import { analyticsRouter } from "./routes/analytics.routes";
 import { authRouter } from "./routes/auth.routes";
 import { callsRouter } from "./routes/calls.routes";
 import { employeesRouter } from "./routes/employees.routes";
@@ -23,6 +24,7 @@ app.use("/api/leads", leadsRouter);
 app.use("/api/calls", callsRouter);
 app.use("/api/escalations", escalationsRouter);
 app.use("/api/employees", employeesRouter);
+app.use("/api/analytics", analyticsRouter);
 
 app.use(errorHandler);
 
