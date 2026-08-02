@@ -111,3 +111,41 @@ export interface UpdateLeadInput {
   language?: string
   assignedEmployeeId?: string
 }
+
+export interface AnalyticsOverview {
+  pipelineByStatus: { status: LeadStatus; count: number }[]
+  leadsBySource: { source: string; count: number }[]
+  leadsByCourse: { course: string; count: number }[]
+  sentimentDistribution: {
+    note: string
+    data: { sentiment: string; count: number }[]
+  }
+  callDuration: {
+    avgSeconds: number | null
+    totalSeconds: number | null
+    callsWithDuration: number
+  }
+  conversionRate: {
+    convertedOverTotal: number | null
+    convertedOverResolved: number | null
+  }
+  followUpSuccess: {
+    note: string
+    convertedAfterFollowUp: number
+    notConvertedAfterFollowUp: number
+  }
+}
+
+export interface EmployeePerformance {
+  id: string
+  name: string
+  email: string
+  status: EmployeeStatus
+  totalAssigned: number
+  byStatus: Record<string, number>
+}
+
+export interface EscalationWithLead extends Escalation {
+  lead: Lead
+  assignedEmployee: Employee | null
+}

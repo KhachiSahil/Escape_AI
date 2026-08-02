@@ -1,14 +1,28 @@
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { useAuth } from '../context/useAuth'
 import { LeadTable } from '../components/LeadTable'
 import { LoadingState } from '../components/LoadingState'
 import { ErrorState } from '../components/ErrorState'
-import type { Lead } from '../types/models'
+import type { Lead, LeadScore } from '../types/models'
+
+const SCORE_OPTIONS: LeadScore[] = ['VERY_HOT', 'HOT', 'WARM', 'COLD', 'RE_ENGAGE', 'DORMANT', 'LOST']
+const SCORE_RANK: Record<LeadScore, number> = {
+  VERY_HOT: 0,
+  HOT: 1,
+  WARM: 2,
+  COLD: 3,
+  RE_ENGAGE: 4,
+  DORMANT: 5,
+  LOST: 6,
+}
 
 export function LeadsListPage() {
-  const { employee, logout } = useAuth()
+  const { employee } = useAuth()
   const isEmployeeOnly = employee?.role === 'SALES_EMPLOYEE'
+  const [scoreFilter, setScoreFilter] = useState<LeadScore | ''>('')
+  const [sortByScore, setSortByScore] = useState(false)
 
   const query = useQuery({
     queryKey: ['leads', isEmployeeOnly ? employee?.id : 'all'],
@@ -18,28 +32,57 @@ export function LeadsListPage() {
       ),
   })
 
+  const leads = useMemo(() => {
+    if (!query.data) return undefined
+    let result = query.data
+    if (scoreFilter) {
+      result = result.filter((lead) => lead.leadScore === scoreFilter)
+    }
+    if (sortByScore) {
+      result = [...result].sort((a, b) => {
+        const rankA = a.leadScore ? SCORE_RANK[a.leadScore] : 99
+        const rankB = b.leadScore ? SCORE_RANK[b.leadScore] : 99
+        return rankA - rankB
+      })
+    }
+    return result
+  }, [query.data, scoreFilter, sortByScore])
+
   return (
     <div className="mx-auto max-w-5xl p-6">
       <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">
-            {isEmployeeOnly ? 'My Assigned Leads' : 'All Leads'}
-          </h1>
-          <p className="text-sm text-gray-500">Signed in as {employee?.name} ({employee?.role})</p>
+        <h1 className="text-xl font-semibold text-gray-900">
+          {isEmployeeOnly ? 'My Assigned Leads' : 'All Leads'}
+        </h1>
+        <div className="flex items-center gap-2">
+          <select
+            value={scoreFilter}
+            onChange={(e) => setScoreFilter(e.target.value as LeadScore | '')}
+            className="rounded border border-gray-300 px-2 py-1.5 text-sm"
+          >
+            <option value="">All scores</option>
+            {SCORE_OPTIONS.map((score) => (
+              <option key={score} value={score}>
+                {score.replace(/_/g, ' ')}
+              </option>
+            ))}
+          </select>
+          <label className="flex items-center gap-1.5 text-sm text-gray-600">
+            <input
+              type="checkbox"
+              checked={sortByScore}
+              onChange={(e) => setSortByScore(e.target.checked)}
+            />
+            Sort by score
+          </label>
         </div>
-        <button
-          onClick={logout}
-          className="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100"
-        >
-          Log out
-        </button>
       </div>
 
       {query.isLoading && <LoadingState label="Loading leads…" />}
       {query.isError && <ErrorState message="Could not load leads." />}
-      {query.data && (
+      {leads && (
         <div className="rounded-lg border border-gray-200 bg-white">
-          <LeadTable leads={query.data} />
+          <LeadTable leads={leads} />
         </div>
       )}
     </div>
