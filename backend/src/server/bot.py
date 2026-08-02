@@ -93,7 +93,10 @@ async def run_bot(transport: BaseTransport):
     @transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport, client):
         logger.info("Client disconnected")
-        if leads.current_lead_id:
+        if leads.current_lead_id and not leads.call_summary_finalized:
+            # Fallback: the LLM never got to call finalize_call_summary
+            # (e.g. an abrupt disconnect) - log a minimal record rather
+            # than losing the call entirely.
             await leads.log_call_summary(
                 lead_id=leads.current_lead_id,
                 call_type="AI_INBOUND",

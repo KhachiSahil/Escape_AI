@@ -52,6 +52,12 @@ export const createCallSchema = z.object({
   sentiment: z.string().optional(),
   durationSeconds: z.number().int().optional(),
   recordingUrl: z.string().optional(),
+  goals: z.string().optional(),
+  painPoints: z.string().optional(),
+  nextSteps: z.string().optional(),
+  buyingSignals: z.string().optional(),
+  objections: z.string().optional(),
+  recommendedAction: z.string().optional(),
 });
 
 export const createEscalationSchema = z.object({

@@ -17,6 +17,10 @@ from tools.api_client import CrmApiError, request
 # succeeds, so bot.py can call log_call_summary on disconnect.
 current_lead_id: str | None = None
 
+# Set once finalize_call_summary has actually been called this session, so
+# bot.py's disconnect handler knows not to double-log a call record.
+call_summary_finalized: bool = False
+
 
 def _fire_and_forget(coro, description: str) -> None:
     """Run coro in the background without blocking the conversation turn.
@@ -141,6 +145,34 @@ request_human_escalation_function = FunctionSchema(
 )
 
 
+finalize_call_summary_function = FunctionSchema(
+    name="finalize_call_summary",
+    description=(
+        "Call this once, when you sense the conversation is wrapping up "
+        "(the caller is saying goodbye, the call is about to end, or you've "
+        "covered everything needed). Summarize the call so the CRM has an "
+        "accurate record. Only include what was actually discussed - never "
+        "invent details."
+    ),
+    properties={
+        "leadId": {"type": "string", "description": "The lead id returned by create_lead"},
+        "shortSummary": {"type": "string", "description": "One-sentence summary of the call"},
+        "detailedSummary": {"type": "string", "description": "A fuller summary of what was discussed"},
+        "keyPoints": {"type": "string", "description": "Key points from the conversation"},
+        "intent": {"type": "string", "description": "Overall buying intent, e.g. 'high', 'medium', 'low'"},
+        "urgency": {"type": "string", "description": "Overall urgency, e.g. 'immediate', 'this month', 'exploring'"},
+        "sentiment": {"type": "string", "description": "Overall caller sentiment, e.g. 'positive', 'neutral', 'negative'"},
+        "goals": {"type": "string", "description": "The caller's stated career/learning goals"},
+        "painPoints": {"type": "string", "description": "Pain points the caller mentioned"},
+        "nextSteps": {"type": "string", "description": "Agreed or recommended next steps"},
+        "buyingSignals": {"type": "string", "description": "Specific signals suggesting purchase intent"},
+        "objections": {"type": "string", "description": "Objections or concerns the caller raised"},
+        "recommendedAction": {"type": "string", "description": "What a human follow-up should focus on, if any"},
+    },
+    required=["leadId", "shortSummary"],
+)
+
+
 async def create_lead(params: FunctionCallParams) -> None:
     global current_lead_id
     args = params.arguments
@@ -223,8 +255,20 @@ async def log_call_summary(
     intent: str | None = None,
     urgency: str | None = None,
     sentiment: str | None = None,
+    goals: str | None = None,
+    pain_points: str | None = None,
+    next_steps: str | None = None,
+    buying_signals: str | None = None,
+    objections: str | None = None,
+    recommended_action: str | None = None,
 ) -> None:
-    """Called directly by bot.py on disconnect, not an LLM-invoked tool."""
+    """Writes a Call record to the CRM API.
+
+    Called two ways: as the fallback from bot.py's on_client_disconnected
+    (call_type only, everything else None) if finalize_call_summary was
+    never invoked this session, or via finalize_call_summary below with the
+    LLM's actual summary of the call.
+    """
     try:
         await request(
             "POST",
@@ -238,7 +282,41 @@ async def log_call_summary(
                 "intent": intent,
                 "urgency": urgency,
                 "sentiment": sentiment,
+                "goals": goals,
+                "painPoints": pain_points,
+                "nextSteps": next_steps,
+                "buyingSignals": buying_signals,
+                "objections": objections,
+                "recommendedAction": recommended_action,
             },
         )
     except CrmApiError:
         logger.error(f"Failed to log call summary for lead {lead_id}")
+
+
+async def finalize_call_summary(params: FunctionCallParams) -> None:
+    global call_summary_finalized
+    args = params.arguments
+    lead_id = args.get("leadId")
+    if not lead_id:
+        await params.result_callback({"status": "error", "message": "Missing leadId"})
+        return
+
+    call_summary_finalized = True
+    await log_call_summary(
+        lead_id=lead_id,
+        call_type="AI_INBOUND",
+        short_summary=args.get("shortSummary"),
+        detailed_summary=args.get("detailedSummary"),
+        key_points=args.get("keyPoints"),
+        intent=args.get("intent"),
+        urgency=args.get("urgency"),
+        sentiment=args.get("sentiment"),
+        goals=args.get("goals"),
+        pain_points=args.get("painPoints"),
+        next_steps=args.get("nextSteps"),
+        buying_signals=args.get("buyingSignals"),
+        objections=args.get("objections"),
+        recommended_action=args.get("recommendedAction"),
+    )
+    await params.result_callback({"status": "logged"})

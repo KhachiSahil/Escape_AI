@@ -102,20 +102,26 @@ model Lead {
 }
 
 model Call {
-  id              String   @id @default(cuid())
-  leadId          String
-  lead            Lead     @relation(fields: [leadId], references: [id])
-  callType        CallType
-  shortSummary    String?
-  detailedSummary String?
-  keyPoints       String?
-  intent          String?
-  urgency         String?
-  sentiment       String?
-  durationSeconds Int?
-  recordingUrl    String?
-  transcript      String?  @db.Text
-  createdAt       DateTime @default(now())
+  id                String   @id @default(cuid())
+  leadId            String
+  lead              Lead     @relation(fields: [leadId], references: [id])
+  callType          CallType
+  shortSummary      String?
+  detailedSummary   String?
+  keyPoints         String?
+  intent            String?
+  urgency           String?
+  sentiment         String?
+  durationSeconds   Int?
+  recordingUrl      String?
+  transcript        String?  @db.Text
+  goals             String?  @db.Text
+  painPoints        String?  @db.Text
+  nextSteps         String?  @db.Text
+  buyingSignals     String?  @db.Text
+  objections        String?  @db.Text
+  recommendedAction String?  @db.Text
+  createdAt         DateTime @default(now())
 
   @@index([leadId])
 }

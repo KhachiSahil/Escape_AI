@@ -3,6 +3,8 @@ from pipecat.adapters.schemas.tools_schema import ToolsSchema
 from tools.leads import (
     create_lead,
     create_lead_function,
+    finalize_call_summary,
+    finalize_call_summary_function,
     request_human_escalation,
     request_human_escalation_function,
     schedule_callback,
@@ -16,6 +18,7 @@ TOOLS = [
     update_lead_function,
     schedule_callback_function,
     request_human_escalation_function,
+    finalize_call_summary_function,
 ]
 
 HANDLERS = {
@@ -23,6 +26,7 @@ HANDLERS = {
     "update_lead": update_lead,
     "schedule_callback": schedule_callback,
     "request_human_escalation": request_human_escalation,
+    "finalize_call_summary": finalize_call_summary,
 }
 
 tools_schema = ToolsSchema(standard_tools=TOOLS)
