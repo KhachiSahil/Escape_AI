@@ -1,65 +1,55 @@
 import { createContext, useCallback, useEffect, useState, type ReactNode } from 'react'
-import { api, setAuthToken, setUnauthorizedHandler } from '../lib/api'
+import { api, setUnauthorizedHandler } from '../lib/api'
 import { queryClient } from '../lib/queryClient'
 import type { Employee, LoginResponse } from '../types/models'
 
-const STORAGE_KEY = 'escapeai_auth'
-
-interface StoredAuth {
-  token: string
-  employee: Pick<Employee, 'id' | 'name' | 'email' | 'role'>
-}
+type EmployeeSummary = Pick<Employee, 'id' | 'name' | 'email' | 'role'>
 
 interface AuthContextValue {
-  token: string | null
-  employee: StoredAuth['employee'] | null
+  employee: EmployeeSummary | null
+  isLoading: boolean
   login: (email: string, password: string) => Promise<void>
-  logout: () => void
+  logout: () => Promise<void>
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const AuthContext = createContext<AuthContextValue | null>(null)
 
-function readStoredAuth(): StoredAuth | null {
-  const raw = sessionStorage.getItem(STORAGE_KEY)
-  if (!raw) return null
-  try {
-    return JSON.parse(raw) as StoredAuth
-  } catch {
-    return null
-  }
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [auth, setAuth] = useState<StoredAuth | null>(() => readStoredAuth())
+  const [employee, setEmployee] = useState<EmployeeSummary | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
-  useEffect(() => {
-    setAuthToken(auth?.token ?? null)
-  }, [auth])
-
-  const logout = useCallback(() => {
-    sessionStorage.removeItem(STORAGE_KEY)
-    setAuth(null)
-    setAuthToken(null)
-    queryClient.clear()
+  const logout = useCallback(async () => {
+    try {
+      await api.post('/api/auth/logout')
+    } finally {
+      setEmployee(null)
+      queryClient.clear()
+    }
   }, [])
 
   useEffect(() => {
-    setUnauthorizedHandler(logout)
+    setUnauthorizedHandler(() => setEmployee(null))
     return () => setUnauthorizedHandler(null)
-  }, [logout])
+  }, [])
+
+  // The JWT lives in an httpOnly cookie now, invisible to JS - identity is
+  // rehydrated by asking the server who the cookie belongs to.
+  useEffect(() => {
+    api
+      .get<{ employee: EmployeeSummary }>('/api/auth/me')
+      .then((response) => setEmployee(response.employee))
+      .catch(() => setEmployee(null))
+      .finally(() => setIsLoading(false))
+  }, [])
 
   const login = useCallback(async (email: string, password: string) => {
     const response = await api.post<LoginResponse>('/api/auth/login', { email, password })
-    const next: StoredAuth = { token: response.token, employee: response.employee }
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(next))
-    setAuth(next)
+    setEmployee(response.employee)
   }, [])
 
   return (
-    <AuthContext.Provider
-      value={{ token: auth?.token ?? null, employee: auth?.employee ?? null, login, logout }}
-    >
+    <AuthContext.Provider value={{ employee, isLoading, login, logout }}>
       {children}
     </AuthContext.Provider>
   )

@@ -11,13 +11,13 @@ import type { Lead } from '../types/models'
  * payloads already carry the full record if a future optimization wants it.
  */
 export function useRealtimeSync(): void {
-  const { token } = useAuth()
+  const { employee } = useAuth()
   const queryClient = useQueryClient()
 
   useEffect(() => {
-    if (!token) return
+    if (!employee) return
 
-    const socket = connectSocket(token)
+    const socket = connectSocket()
 
     const onLeadUpdated = (lead: Lead) => {
       queryClient.invalidateQueries({ queryKey: ['leads'] })
@@ -41,5 +41,5 @@ export function useRealtimeSync(): void {
       socket.off('call:logged', onCallLogged)
       disconnectSocket()
     }
-  }, [token, queryClient])
+  }, [employee, queryClient])
 }

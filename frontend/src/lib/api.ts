@@ -13,13 +13,7 @@ export class ApiError extends Error {
   }
 }
 
-let currentToken: string | null = null
 let onUnauthorized: (() => void) | null = null
-
-/** Called by AuthContext whenever the token changes (login/logout/hydrate). */
-export function setAuthToken(token: string | null): void {
-  currentToken = token
-}
 
 /** Called once by AuthContext to be notified when a request comes back 401. */
 export function setUnauthorizedHandler(handler: (() => void) | null): void {
@@ -29,11 +23,15 @@ export function setUnauthorizedHandler(handler: (() => void) | null): void {
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers)
   headers.set('Content-Type', 'application/json')
-  if (currentToken) {
-    headers.set('Authorization', `Bearer ${currentToken}`)
-  }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers })
+  // The JWT now lives in an httpOnly cookie the browser attaches
+  // automatically - credentials:'include' is what makes that happen
+  // cross-origin. No token handling needed here anymore.
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers,
+    credentials: 'include',
+  })
 
   if (response.status === 401) {
     onUnauthorized?.()

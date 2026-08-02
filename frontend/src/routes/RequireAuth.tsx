@@ -4,9 +4,16 @@ import { useAuth } from '../context/useAuth'
 import type { Role } from '../types/models'
 
 export function RequireAuth({ children, roles }: { children: ReactNode; roles?: Role[] }) {
-  const { token, employee } = useAuth()
+  const { employee, isLoading } = useAuth()
 
-  if (!token || !employee) {
+  // Identity now comes from an async GET /api/auth/me call (no token in JS
+  // to synchronously read anymore) - avoid a flash-redirect to /login while
+  // that request is still in flight on first mount/page refresh.
+  if (isLoading) {
+    return null
+  }
+
+  if (!employee) {
     return <Navigate to="/login" replace />
   }
 

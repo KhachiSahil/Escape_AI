@@ -4,14 +4,15 @@ const SOCKET_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000'
 
 let socket: Socket | null = null
 
-/** Module-level singleton, mirroring lib/api.ts's token-tracking pattern -
- * the connection itself doesn't need to trigger React re-renders, only the
- * events it receives do (consumed via useRealtimeSync). */
-export function connectSocket(token: string): Socket {
+/** Module-level singleton - the connection itself doesn't need to trigger
+ * React re-renders, only the events it receives do (consumed via
+ * useRealtimeSync). The JWT lives in an httpOnly cookie now; withCredentials
+ * sends it automatically during the handshake, no token to pass explicitly. */
+export function connectSocket(): Socket {
   if (socket) {
     socket.disconnect()
   }
-  socket = io(SOCKET_URL, { auth: { token } })
+  socket = io(SOCKET_URL, { withCredentials: true })
   return socket
 }
 
