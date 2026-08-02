@@ -21,7 +21,6 @@ const STATUS_OPTIONS: LeadStatus[] = [
 export function LeadDetailPage() {
   const { id } = useParams<{ id: string }>()
   const { employee } = useAuth()
-  const canEdit = employee?.role === 'ADMIN' || employee?.role === 'MANAGER'
   const queryClient = useQueryClient()
 
   const query = useQuery({
@@ -58,6 +57,10 @@ export function LeadDetailPage() {
   if (query.isError || !query.data) return <ErrorState message="Could not load this lead." />
 
   const lead = query.data
+  const canEdit =
+    employee?.role === 'ADMIN' ||
+    employee?.role === 'MANAGER' ||
+    (employee?.role === 'SALES_EMPLOYEE' && lead.assignedEmployeeId === employee.id)
 
   return (
     <div className="mx-auto max-w-3xl p-6">

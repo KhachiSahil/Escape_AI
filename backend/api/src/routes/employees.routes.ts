@@ -31,6 +31,14 @@ employeesRouter.patch("/:id/status", requireAuth("ADMIN", "MANAGER"), async (req
     const employee = await prisma.employee.update({
       where: { id: req.params.id },
       data: { status },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        status: true,
+        lastAssignedAt: true,
+      },
     });
     res.json(employee);
   } catch (err) {

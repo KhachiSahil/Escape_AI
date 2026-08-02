@@ -1,7 +1,12 @@
-import { Prisma } from "@prisma/client";
+import { Prisma, Role } from "@prisma/client";
 
 import { prisma } from "../db";
 import { HttpError } from "../middleware/errorHandler";
+
+export interface Actor {
+  id: string;
+  role: Role;
+}
 
 export function createLead(data: Prisma.LeadUncheckedCreateInput) {
   return prisma.lead.create({ data });
@@ -26,9 +31,29 @@ export function listLeads(filters: { status?: string; assignedEmployeeId?: strin
   });
 }
 
-export async function updateLead(id: string, data: Prisma.LeadUncheckedUpdateInput) {
+export async function updateLead(
+  id: string,
+  data: Prisma.LeadUncheckedUpdateInput,
+  actor?: Actor,
+) {
+  let payload = data;
+
+  if (actor?.role === "SALES_EMPLOYEE") {
+    const existing = await prisma.lead.findUnique({
+      where: { id },
+      select: { assignedEmployeeId: true },
+    });
+    if (!existing) throw new HttpError(404, "Lead not found");
+    if (existing.assignedEmployeeId !== actor.id) {
+      throw new HttpError(403, "Forbidden");
+    }
+    // Employees may not reassign leads to someone else.
+    const { assignedEmployeeId: _ignored, ...rest } = payload;
+    payload = rest;
+  }
+
   try {
-    return await prisma.lead.update({ where: { id }, data });
+    return await prisma.lead.update({ where: { id }, data: payload });
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
       throw new HttpError(404, "Lead not found");

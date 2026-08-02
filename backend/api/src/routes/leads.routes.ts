@@ -1,6 +1,6 @@
 import { Router } from "express";
 
-import { requireAuth, requireServiceKey } from "../middleware/auth";
+import { AuthedRequest, requireAuth, requireServiceKey } from "../middleware/auth";
 import * as leadService from "../services/leadService";
 import {
   createLeadSchema,
@@ -42,10 +42,13 @@ leadsRouter.get("/:id", requireAuth(), async (req, res, next) => {
   }
 });
 
-leadsRouter.patch("/:id", requireAuth("ADMIN", "MANAGER"), async (req, res, next) => {
+leadsRouter.patch("/:id", requireAuth(), async (req: AuthedRequest, res, next) => {
   try {
+    if (!req.employee) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
     const data = updateLeadSchema.parse(req.body);
-    const lead = await leadService.updateLead(req.params.id, data);
+    const lead = await leadService.updateLead(req.params.id, data, req.employee);
     res.json(lead);
   } catch (err) {
     next(err);
