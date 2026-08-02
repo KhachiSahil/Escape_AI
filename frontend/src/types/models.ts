@@ -53,6 +53,7 @@ export interface Call {
   id: string
   leadId: string
   callType: CallType
+  handledByEmployeeId: string | null
   shortSummary: string | null
   detailedSummary: string | null
   keyPoints: string | null

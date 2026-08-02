@@ -77,4 +77,17 @@ describe("updateLead ownership authorization", () => {
       updateLead("missing", { notes: "x" }, { id: "emp-1", role: "SALES_EMPLOYEE" }),
     ).rejects.toMatchObject(new HttpError(404, "Lead not found"));
   });
+
+  it("lets a SALES_EMPLOYEE set priority on their own lead while assignedEmployeeId is still stripped", async () => {
+    mockFindUnique.mockResolvedValue({ assignedEmployeeId: "emp-1" });
+    mockUpdate.mockResolvedValue({ id: "lead-1", assignedEmployeeId: "emp-1", priority: "P1" });
+
+    await updateLead(
+      "lead-1",
+      { priority: "P1", assignedEmployeeId: "someone-else" },
+      { id: "emp-1", role: "SALES_EMPLOYEE" },
+    );
+
+    expect(mockUpdate).toHaveBeenCalledWith({ where: { id: "lead-1" }, data: { priority: "P1" } });
+  });
 });

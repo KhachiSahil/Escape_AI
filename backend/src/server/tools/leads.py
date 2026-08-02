@@ -70,11 +70,14 @@ update_lead_function = FunctionSchema(
     name="update_lead",
     description=(
         "Update the lead record as you learn more during the call - "
-        "buying intent, urgency, notes, lead score, or status. Only "
+        "buying intent, urgency, notes, lead score, status, or priority. Only "
         "include fields you actually learned; never overwrite with guesses. "
         "Set leadScore/status when the caller shows strong buying signals "
         "(e.g. leadScore=HOT, status=QUALIFIED) or clearly disengages "
-        "(e.g. leadScore=LOST, status=LOST)."
+        "(e.g. leadScore=LOST, status=LOST). Set priority (P1-P4) based on how "
+        "urgent and time-sensitive their interest is, independent of how "
+        "positive/negative leadScore is - a HOT lead exploring for next year is "
+        "P3-P4, not P1."
     ),
     properties={
         "leadId": {"type": "string", "description": "The lead id returned by create_lead"},
@@ -91,6 +94,22 @@ update_lead_function = FunctionSchema(
             "type": "string",
             "enum": ["NEW", "QUALIFIED", "CALLBACK_SCHEDULED", "ESCALATED", "CONVERTED", "LOST", "DORMANT"],
             "description": "Lead lifecycle status",
+        },
+        "priority": {
+            "type": "string",
+            "enum": ["P1", "P2", "P3", "P4"],
+            "description": (
+                "This lead's urgency/importance tier for human follow-up. "
+                "P1 = ready to enroll now or extremely time-sensitive "
+                "(e.g. explicit immediate intent, asking how to pay today). "
+                "P2 = strong genuine interest with a concrete near-term "
+                "timeline (e.g. wants to start this month, comparing "
+                "specific batches). P3 = interested but no committed "
+                "timeline or still deciding. P4 = early-stage or just "
+                "exploring, no urgency signals yet. Set this whenever you "
+                "have enough signal to judge urgency, and update it if that "
+                "signal changes during the call."
+            ),
         },
     },
     required=["leadId"],

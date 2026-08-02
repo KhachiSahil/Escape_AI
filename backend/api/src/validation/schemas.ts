@@ -49,6 +49,7 @@ export const scheduleCallbackSchema = z.object({
 export const createCallSchema = z.object({
   leadId: z.string().cuid(),
   callType: z.enum(["AI_OUTBOUND", "AI_INBOUND", "HUMAN"]),
+  handledByEmployeeId: z.string().cuid().optional(),
   shortSummary: shortText().optional(),
   detailedSummary: longText().optional(),
   keyPoints: longText().optional(),

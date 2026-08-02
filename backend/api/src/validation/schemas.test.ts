@@ -43,6 +43,16 @@ describe("updateLeadSchema", () => {
     const result = updateLeadSchema.safeParse({ notes: "a".repeat(5001) });
     expect(result.success).toBe(false);
   });
+
+  it("accepts a valid priority value", () => {
+    const result = updateLeadSchema.safeParse({ priority: "P1" });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects an invalid priority value", () => {
+    const result = updateLeadSchema.safeParse({ priority: "P5" });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("createCallSchema", () => {
@@ -70,5 +80,31 @@ describe("createCallSchema", () => {
       callType: "AI_INBOUND",
     });
     expect(result.success).toBe(false);
+  });
+
+  it("accepts a valid handledByEmployeeId", () => {
+    const result = createCallSchema.safeParse({
+      leadId: "cldx1a2b30000qzrmn831p5n",
+      callType: "HUMAN",
+      handledByEmployeeId: "cldx1a2b30000qzrmn831p5n",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a non-cuid handledByEmployeeId", () => {
+    const result = createCallSchema.safeParse({
+      leadId: "cldx1a2b30000qzrmn831p5n",
+      callType: "HUMAN",
+      handledByEmployeeId: "not-a-cuid",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("still accepts a payload without handledByEmployeeId (AI calls)", () => {
+    const result = createCallSchema.safeParse({
+      leadId: "cldx1a2b30000qzrmn831p5n",
+      callType: "AI_INBOUND",
+    });
+    expect(result.success).toBe(true);
   });
 });
