@@ -12,11 +12,15 @@ than rewriting history.
   functions in `tools/` — these call the CRM API over HTTP rather than
   touching any database directly (the Python process has no DB of its own).
 - **`backend/api/`** — Node.js/TypeScript CRM API (Express + Prisma +
-  PostgreSQL, hosted on Neon). Owns all persistence: Leads, Calls,
-  Employees, Escalations. Exposes REST endpoints under `/api/*`. Two auth
-  modes: JWT (`Authorization: Bearer`) for human/employee-facing routes with
-  role checks (ADMIN/MANAGER/SALES_EMPLOYEE), and a shared service key
-  (`X-Service-Key`) for the Python voice agent's backend-to-backend calls.
+  PostgreSQL, hosted on Neon — non-pooled connection, see Phase 2f entry).
+  Owns all persistence: Leads, Calls, Employees, Escalations. Exposes REST
+  endpoints under `/api/*`. Two auth modes: JWT for human/employee-facing
+  routes with role checks (ADMIN/MANAGER/SALES_EMPLOYEE) — read from an
+  httpOnly cookie first, falling back to `Authorization: Bearer` — and a
+  shared service key (`X-Service-Key`) for the Python voice agent's
+  backend-to-backend calls. Login/logout/`GET /api/auth/me` manage the
+  cookie session. Rate-limited (strict on login, moderate on JWT-protected
+  routes, unthrottled for the trusted voice agent's service-key routes).
   Round-robin human escalation assignment uses a Postgres
   `FOR UPDATE SKIP LOCKED` query, scoped to `role = 'SALES_EMPLOYEE' AND
   status = 'ACTIVE'`, so concurrent escalations can't double-assign the same
@@ -31,8 +35,11 @@ than rewriting history.
   real database (migrations, seed, live HTTP + live voice-call round-trip)
   as of 2026-08-02.
 - **`frontend/`** — React 19 + TypeScript CRM dashboard (Vite, React Router,
-  React Query, Tailwind v4). JWT auth (bearer token, sessionStorage-backed).
-  Shared `AppLayout` with role-aware nav wraps all authenticated routes.
+  React Query, Tailwind v4). Auth identity comes from an httpOnly cookie the
+  browser attaches automatically (`credentials: 'include'`) — the frontend
+  never touches the JWT directly, rehydrating who's logged in via
+  `GET /api/auth/me` on mount. Shared `AppLayout` with role-aware nav wraps
+  all authenticated routes.
   Employee-facing: `/leads` (own assigned leads for SALES_EMPLOYEE, all
   leads for ADMIN/MANAGER, with a score filter/sort), `/leads/:id` (call/
   escalation history, editable status/notes for the assigned employee or
@@ -386,3 +393,115 @@ verification (charts rendering, live cross-tab updates, a real voice call
 exercising `finalize_call_summary`) is the user's to do at their own pace —
 flagged here rather than claimed as done without having actually watched it
 happen.
+
+### 2026-08-02 — Phase 2f: hardening (all six items)
+
+**Context:** All six items the Phase 2a/2c-2e roadmap deferred to
+"hardening" — the Neon P2028 transaction-pool bug, rate limiting, an input
+sanitization audit, test coverage + CI, httpOnly-cookie auth, and secret
+rotation. Built and verified milestone-by-milestone, one commit per
+milestone, same pattern as 2b-2e.
+
+**1. Secret rotation:** `JWT_SECRET` and `SERVICE_API_KEY` were both the
+literal placeholder `sahil_vanshaj` — a JWT-signing secret and a
+service-to-service key are different trust boundaries and must never share
+a value. Rotated both to independent 32-byte random values; synced
+`backend/src/server/.env`'s `CRM_SERVICE_API_KEY` to match. Rotating
+`JWT_SECRET` invalidated every previously-issued JWT (expected, stated
+explicitly, not silently done).
+
+**2. Neon P2028 fix — resolved and verified:** `directUrl` in Prisma only
+affects Migrate/introspection, never the runtime query engine — confirmed
+this before assuming it would fix anything. The actual fix was moving
+runtime `DATABASE_URL` off Neon's pooled (`-pooler`) endpoint to the direct
+one (Neon's documented convention: strip `-pooler` from the hostname) —
+pgbouncer's transaction-pooling mode was the root cause of the interactive
+`$transaction` (`FOR UPDATE SKIP LOCKED` + update) timing out under
+concurrent load. Also added `DIRECT_URL`/`directUrl` for Migrate hygiene,
+and explicit `{maxWait: 5000, timeout: 10000}` options on the
+`$transaction` call as cheap insurance. **Verified by reproducing the exact
+Phase 2a test**: 3 simultaneous `POST /api/escalations` against 3 leads
+with 3 ACTIVE employees — all 3 succeeded with no P2028 (previously 2 of 3
+failed).
+
+**3. Rate limiting:** `express-rate-limit`, two tiers — `loginLimiter`
+(5/min/IP on `POST /api/auth/login` only) and `humanRouteLimiter`
+(100/min/IP, attached per-route to every JWT-protected human/dashboard
+route). Service-key routes (used by the trusted voice agent) are
+deliberately unthrottled — attaching limiters per-route rather than
+globally means they're naturally excluded rather than needing a runtime
+skip check. Verified: 6th rapid login attempt gets 429; 8 rapid service-key
+calls all succeed unthrottled.
+
+**4. Input sanitization audit:** every free-text zod field previously used
+bare `z.string().optional()` — no length or format bound, persisted
+straight to the DB. Added `.trim()` everywhere, `.max(255)` on short
+identity fields, `.max(5000)` on long-form `@db.Text`-backed fields,
+`.max(30)` on phone, `.url().max(2048)` on `recordingUrl`, `.cuid()` format
+validation on lead-id fields. **No HTML-sanitization library added** —
+confirmed zero `dangerouslySetInnerHTML` usage anywhere in `frontend/src`,
+so there was no current stored-XSS vector to close; this is a
+data-quality/DoS-surface hardening pass, not a vulnerability fix. Verified:
+over-length/malformed/non-cuid payloads all 400 with clear messages; valid
+payloads unaffected.
+
+**5. httpOnly-cookie auth migration:**
+- Backend: `cookie-parser` added; `server.ts`'s CORS changed from
+  `cors()` (allow-all) to an explicit `origin` + `credentials: true`.
+  `POST /api/auth/login` now also sets an httpOnly cookie (`SameSite=Lax`,
+  12h `maxAge` matching the JWT's own expiry) — **and still returns `token`
+  in the JSON body too**, so header-based clients keep working
+  indefinitely, not just during a transition (explicit decision: no
+  downside to keeping both paths). New `POST /api/auth/logout` clears the
+  cookie; new `GET /api/auth/me` lets the frontend rehydrate identity
+  without touching the token value. `middleware/auth.ts`'s `requireAuth`
+  reads the cookie first, falls back to the `Authorization` header — the
+  service-key path is completely unrelated and unchanged. Socket.IO's
+  handshake now reads the token from the raw `Cookie` header (Socket.IO's
+  handshake is a real HTTP request even though `socket.handshake.auth` is
+  JS-supplied) via a small inline parser rather than the `cookie` npm
+  package, which needs a `moduleResolution` bump incompatible with this
+  project's CommonJS setup.
+- Frontend: `lib/api.ts` adds `credentials: 'include'`, removes all
+  token-tracking; `AuthContext.tsx` drops `sessionStorage` token
+  persistence entirely, rehydrating via `GET /api/auth/me` on mount (added
+  an `isLoading` state `RequireAuth` checks to avoid a flash-redirect while
+  that request is in flight); `logout()` now calls the real logout endpoint
+  before clearing local state; `lib/socket.ts`/`useRealtimeSync` use
+  `withCredentials: true` instead of passing a token.
+- Verified: `Set-Cookie` present with `HttpOnly`/`SameSite=Lax` on login;
+  `/me` and `/logout` work correctly; service-key routes and the
+  Authorization-header fallback both unaffected; CORS preflight confirmed
+  scoped to the frontend's exact origin with credentials.
+
+**6. Test coverage + CI:** zero tests existed anywhere in the project
+before this. Added:
+- `backend/api`: `vitest` + a minimal ESLint config (neither existed) — 24
+  tests across `escalationService` (assignment/queued branching, room
+  emission, transaction timeout options), `leadService` (the
+  SALES_EMPLOYEE ownership check from Phase 2f's own auth work), `auth`
+  middleware (cookie/header/service-key/invalid/role-mismatch paths), and
+  `validation/schemas` (this phase's new bounds). **Mocked-Prisma logic
+  tests only** — no live-concurrency test against a real DB this pass (the
+  round-robin's actual `FOR UPDATE SKIP LOCKED` behavior was already
+  manually verified against the live Neon DB in item 2 above); a dedicated
+  test database is a fast-follow if deeper DB-level testing is wanted later.
+- `backend/src/server` (Python): `pytest` + `pytest-asyncio` — 12 tests
+  covering every LLM-invoked tool handler in `tools/leads.py` by mocking
+  `tools.api_client.request`, the single seam every handler funnels
+  through.
+- `frontend`: `vitest` + React Testing Library + `jsdom` — 5 tests,
+  deliberately minimal (not broad component coverage) given zero prior
+  baseline: `AuthContext` identity rehydration via a mocked `/me`, and
+  `RequireAuth`'s redirect/role-gating behavior.
+- `.github/workflows/ci.yml`: three jobs (backend, frontend, python),
+  typecheck+lint+test(+build for frontend). No Postgres service
+  container — every backend test is a mocked-Prisma logic test, verified
+  to pass with `.env` entirely absent.
+
+**Known limitation carried forward:** none — all six Phase 2f items are
+now resolved. Remaining future work (not urgent, not blocking): a real test
+database for true-concurrency regression testing of the round-robin logic;
+broader frontend component test coverage beyond the two smoke-test files;
+consider enforcing cookie-only auth (dropping the header fallback) if a
+concrete reason to do so ever arises.
