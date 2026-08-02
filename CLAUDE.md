@@ -12,14 +12,17 @@ than rewriting history.
   functions in `tools/` — these call the CRM API over HTTP rather than
   touching any database directly (the Python process has no DB of its own).
 - **`backend/api/`** — Node.js/TypeScript CRM API (Express + Prisma +
-  PostgreSQL). Owns all persistence: Leads, Calls, Employees, Escalations.
-  Exposes REST endpoints under `/api/*`. Two auth modes: JWT
-  (`Authorization: Bearer`) for human/employee-facing routes with
+  PostgreSQL, hosted on Neon). Owns all persistence: Leads, Calls,
+  Employees, Escalations. Exposes REST endpoints under `/api/*`. Two auth
+  modes: JWT (`Authorization: Bearer`) for human/employee-facing routes with
   role checks (ADMIN/MANAGER/SALES_EMPLOYEE), and a shared service key
   (`X-Service-Key`) for the Python voice agent's backend-to-backend calls.
   Round-robin human escalation assignment uses a Postgres
-  `FOR UPDATE SKIP LOCKED` query so concurrent escalations can't
-  double-assign the same employee or starve anyone.
+  `FOR UPDATE SKIP LOCKED` query, scoped to `role = 'SALES_EMPLOYEE' AND
+  status = 'ACTIVE'`, so concurrent escalations can't double-assign the same
+  employee, can't starve anyone, and never assign to Admin/Manager accounts.
+  Verified running end-to-end against the real database (migrations,
+  seed, live HTTP + live voice-call round-trip) as of 2026-08-02.
 - **`frontend/`** — Stock Vite + React 19 template, not yet built out. No
   dashboard UI exists yet (see Deferred below).
 
@@ -111,3 +114,120 @@ analytics deferred to a later phase.
   original travel KB handled unfilled business specifics).
 - Where PostgreSQL runs for this phase (local/Docker/managed) — `.env.example`
   assumes a local/Docker Postgres reachable via `DATABASE_URL`.
+
+### 2026-08-02 — Phase 2a: bug fixes + verified CRM backend + schema prep
+
+**Context:** After the Foundation phase, the user hit three concrete problems
+using the voice agent: LLM function calls were visible in the console/UI,
+the agent lagged noticeably, and it was unclear whether tool calls actually
+reached the CRM API (they never had — see key mismatch below). The user also
+confirmed they want the full original platform (dashboards, analytics,
+real-time, expanded tools), but agreed to sequence it — this phase fixes the
+concrete bugs and gets the backend verified and running for real against a
+live database; frontend/dashboards/analytics/real-time are tracked as an
+explicit roadmap below rather than attempted in one pass.
+
+**Fixed:**
+- **Function calls visible in console/UI** — `backend/src/server/bot.py`'s
+  `PipelineWorker(...)` call passed no `rtvi_observer_params`, so Pipecat's
+  auto-created RTVI observer emitted function-call lifecycle events (start/
+  in-progress/stopped) at the default `NONE` report level — visible to any
+  RTVI-aware client even without function name/args. Fixed by passing
+  `rtvi_observer_params=RTVIObserverParams(function_call_report_level={"*":
+  RTVIFunctionCallReportLevel.DISABLED})`.
+- **Agent latency** — `backend/src/server/tools/api_client.py` opened a
+  brand-new `httpx.AsyncClient` (fresh TCP/TLS handshake) on every tool
+  call; replaced with a lazily-created, reused module-level client (tighter
+  split timeouts: connect 3s/read 5s vs. a flat 10s) with an `aclose_client()`
+  hook wired into `bot.py`'s `run_bot` shutdown path. `update_lead`
+  (`tools/leads.py`) is now fire-and-forget — the LLM never reads its result
+  back into the conversation, so the write happens via `asyncio.create_task`
+  instead of blocking the turn; `create_lead`, `schedule_callback`, and
+  `request_human_escalation` stay blocking since their result changes what
+  the LLM says next. `update_lead`'s schema was also widened to accept
+  `status` and `leadScore` (folding in `markLeadInterested`/`markLeadLost`/
+  `updateLeadStatus` from the original spec's function list rather than
+  adding separate tools).
+- **CRM_SERVICE_API_KEY/SERVICE_API_KEY mismatch** — the bot's `.env` had
+  `CRM_SERVICE_API_KEY` empty while the API's `.env` had a real
+  `SERVICE_API_KEY` — every tool call was failing auth silently. Synced.
+- **`backend/api/package.json` regression** — `"start"` script referenced
+  `dist/server.ts` (invalid, Node can't run `.ts` directly); reverted to
+  `dist/server.js`.
+- **Round-robin role-scoping bug** (found during live verification, not in
+  the original bug list) — the assignment query filtered only on
+  `status = 'ACTIVE'`, not role, so it could assign an escalation to the
+  seeded Admin account (which is also `status: ACTIVE`) instead of only
+  Sales Employees. Fixed by adding `AND role = 'SALES_EMPLOYEE'` to the
+  `SELECT ... FOR UPDATE SKIP LOCKED` query in `escalationService.ts`.
+
+**Schema (one additive migration, `20260802115925_init` — this is the first
+migration in the repo; a prior untracked migration had been applied directly
+to the Neon database in an earlier session with no local migration file, and
+was reset since all tables were empty):**
+- `Lead.leadScore` converted from free-text `String?` to enum `LeadScore`
+  (`HOT`/`WARM`/`COLD`/`VERY_HOT`/`LOST`/`DORMANT`/`RE_ENGAGE`) — matches the
+  original spec's scoring taxonomy exactly and lets future automation branch
+  on a closed set. `update_lead`'s tool schema and the API's zod
+  `updateLeadSchema` updated to match.
+- `Call.transcript` (nullable `@db.Text`) added — unpopulated until a
+  transcript processor is wired into the pipeline (see Roadmap, Phase 2e).
+  `Call.recordingUrl` already existed from the Foundation phase.
+- Still deferred, no change: `Lead.tags`/`metadata` JSON blobs, distinct
+  `location`/`preferredMode` columns, `customerStage` (no concrete consumer
+  yet; `customerStage`'s meaning relative to the existing `LeadStatus` enum
+  needs to be pinned down when a dashboard screen actually needs it, not
+  guessed now).
+
+**Verified end-to-end (not just code review):**
+- `backend/api` migrated and seeded against the real Neon Postgres instance
+  (1 ADMIN + 3 ACTIVE + 1 ON_LEAVE `SALES_EMPLOYEE`, per `prisma/seed.ts`).
+- Live HTTP round-trip tested: login → JWT, lead create/list/patch (incl.
+  the new `leadScore` enum), call logging, and round-robin escalation —
+  sequential escalations correctly cycled Employee One → Two → Three,
+  never the Admin (post-fix) and never the ON_LEAVE employee.
+- Live voice call end-to-end: a real conversation created a real `Lead` row
+  via `create_lead`, and a follow-up `update_lead` call landed a `leadScore`
+  and `notes` update — confirmed via `GET /api/leads`. Test/demo rows were
+  cleared afterward; seeded employees left intact.
+
+**Known limitation, deferred to Phase 2f (not fixed this session, by
+explicit user decision):** under genuinely concurrent escalation requests
+(3 fired simultaneously in testing), 2 of 3 failed with Prisma error P2028
+("Unable to start a transaction in the given time") against Neon's pooled
+connection string — likely the pgbouncer-style pooler not playing well with
+Prisma's interactive `$transaction` under concurrent load. Sequential
+requests and light concurrency work correctly; this only surfaced under
+harder concurrent load than the Foundation-phase testing exercised. Needs
+proper investigation (e.g. a direct/non-pooled connection string for
+transactions, or Prisma connection-limit tuning) as part of Phase 2f
+hardening, not a quick patch now.
+
+**Roadmap (user confirmed wanting the full platform; sequenced rather than
+attempted in one pass):**
+- **Phase 2b:** Frontend bootstrap — migrate `frontend/` to TypeScript, add
+  React Router, React Query, Tailwind, JWT auth (httpOnly cookie), employee
+  login + "my assigned leads" list + lead detail view.
+- **Phase 2c:** Admin dashboard (all-leads view, employee management,
+  escalation queue) + analytics/chart pages (lead pipeline, conversion rate,
+  source distribution, sentiment trends, course interest distribution, call
+  duration, follow-up success, revenue forecast placeholder).
+- **Phase 2d:** Real-time layer — Socket.IO server in `backend/api`,
+  room-scoped events (`employee:{id}`, `role:admin`) emitted from
+  `escalationService`/`leadService`/`callService` mutation points; frontend
+  subscribes and invalidates React Query caches.
+- **Phase 2e:** Expanded tool-calling set + lead-scoring automation. Most of
+  the original spec's function list (`assignEmployee`, `saveTranscript`,
+  `getEmployeeAvailability`, `searchLead`, `fetchLeadHistory`,
+  `sendNotification`) is backend/dashboard-side logic, never LLM-invoked —
+  `updateLeadStatus`/`markLeadInterested`/`markLeadLost` already folded into
+  `update_lead` this phase. `getCourseInformation`/`getPricing` stay out of
+  tool-calling (static KB; pricing is an explicit human-escalation trigger
+  by design) unless the business wants dynamic/admin-editable pricing later.
+  This phase wires a transcript processor into the pipeline (to populate
+  `Call.transcript`) and richer call-summary fields (goals/pain points/next
+  steps/buying signals/objections/recommended action).
+- **Phase 2f:** Hardening — the Neon transaction-pooling issue above, secret
+  rotation (current `JWT_SECRET`/`SERVICE_API_KEY` are simple placeholders,
+  fine for local dev, not for production), rate limiting, input
+  sanitization audit, test coverage, CI.

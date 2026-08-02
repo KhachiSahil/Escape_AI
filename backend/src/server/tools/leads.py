@@ -5,6 +5,8 @@ handlers never fabricate data - if the API call fails, the caller is told
 honestly rather than pretending the action succeeded.
 """
 
+import asyncio
+
 from loguru import logger
 from pipecat.adapters.schemas.function_schema import FunctionSchema
 from pipecat.services.llm_service import FunctionCallParams
@@ -14,6 +16,22 @@ from tools.api_client import CrmApiError, request
 # Tracks the current call's lead id in-process, set once create_lead
 # succeeds, so bot.py can call log_call_summary on disconnect.
 current_lead_id: str | None = None
+
+
+def _fire_and_forget(coro, description: str) -> None:
+    """Run coro in the background without blocking the conversation turn.
+
+    Only used for tool calls whose result the LLM never reads back — a
+    plain asyncio.create_task would otherwise silently swallow exceptions,
+    so failures are logged via a done-callback instead.
+    """
+    task = asyncio.create_task(coro)
+
+    def _log_if_failed(t: asyncio.Task) -> None:
+        if t.exception():
+            logger.error(f"Fire-and-forget task failed ({description}): {t.exception()}")
+
+    task.add_done_callback(_log_if_failed)
 
 
 create_lead_function = FunctionSchema(
@@ -48,8 +66,11 @@ update_lead_function = FunctionSchema(
     name="update_lead",
     description=(
         "Update the lead record as you learn more during the call - "
-        "buying intent, urgency, notes, or any qualification field. Only "
-        "include fields you actually learned; never overwrite with guesses."
+        "buying intent, urgency, notes, lead score, or status. Only "
+        "include fields you actually learned; never overwrite with guesses. "
+        "Set leadScore/status when the caller shows strong buying signals "
+        "(e.g. leadScore=HOT, status=QUALIFIED) or clearly disengages "
+        "(e.g. leadScore=LOST, status=LOST)."
     ),
     properties={
         "leadId": {"type": "string", "description": "The lead id returned by create_lead"},
@@ -57,6 +78,16 @@ update_lead_function = FunctionSchema(
         "urgency": {"type": "string", "description": "Detected urgency, e.g. 'immediate', 'this month', 'exploring'"},
         "budget": {"type": "string", "description": "Caller's budget range"},
         "notes": {"type": "string", "description": "Any other relevant detail from the conversation"},
+        "leadScore": {
+            "type": "string",
+            "enum": ["HOT", "WARM", "COLD", "VERY_HOT", "LOST", "DORMANT", "RE_ENGAGE"],
+            "description": "Your assessment of this lead's quality based on the conversation so far",
+        },
+        "status": {
+            "type": "string",
+            "enum": ["NEW", "QUALIFIED", "CALLBACK_SCHEDULED", "ESCALATED", "CONVERTED", "LOST", "DORMANT"],
+            "description": "Lead lifecycle status",
+        },
     },
     required=["leadId"],
 )
@@ -125,16 +156,20 @@ async def create_lead(params: FunctionCallParams) -> None:
 
 
 async def update_lead(params: FunctionCallParams) -> None:
+    """Fire-and-forget: the LLM never reads this result back into the
+    conversation, so the write happens in the background instead of
+    blocking the current turn on a CRM API round-trip.
+    """
     args = dict(params.arguments)
     lead_id = args.pop("leadId", None)
     if not lead_id:
         await params.result_callback({"status": "error", "message": "Missing leadId"})
         return
-    try:
-        await request("PATCH", f"/api/leads/{lead_id}", json=args)
-        await params.result_callback({"status": "updated"})
-    except CrmApiError:
-        await params.result_callback({"status": "error", "message": "Could not update lead."})
+    await params.result_callback({"status": "updating"})
+    _fire_and_forget(
+        request("PATCH", f"/api/leads/{lead_id}", json=args),
+        description=f"update_lead {lead_id}",
+    )
 
 
 async def schedule_callback(params: FunctionCallParams) -> None:

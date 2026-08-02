@@ -8,6 +8,10 @@ from pipecat.processors.aggregators.llm_response_universal import (
     LLMContextAggregatorPair,
     LLMUserAggregatorParams,
 )
+from pipecat.processors.frameworks.rtvi import (
+    RTVIFunctionCallReportLevel,
+    RTVIObserverParams,
+)
 from pipecat.runner.types import RunnerArguments, SmallWebRTCRunnerArguments
 from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
@@ -18,6 +22,7 @@ from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 from pipecat.workers.runner import WorkerRunner
 
 import config
+import tools.api_client as api_client
 import tools.leads as leads
 from prompts import build_system_prompt
 from tools import register_all_tools, tools_schema
@@ -71,6 +76,9 @@ async def run_bot(transport: BaseTransport):
             enable_usage_metrics=True,
         ),
         observers=[],
+        rtvi_observer_params=RTVIObserverParams(
+            function_call_report_level={"*": RTVIFunctionCallReportLevel.DISABLED}
+        ),
     )
 
     @worker.rtvi.event_handler("on_client_ready")
@@ -95,7 +103,10 @@ async def run_bot(transport: BaseTransport):
     runner = WorkerRunner(handle_sigint=False)
 
     await runner.add_workers(worker)
-    await runner.run()
+    try:
+        await runner.run()
+    finally:
+        await api_client.aclose_client()
 
 
 async def bot(runner_args: RunnerArguments):

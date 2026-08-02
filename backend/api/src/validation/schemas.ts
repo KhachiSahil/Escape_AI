@@ -27,7 +27,7 @@ export const updateLeadSchema = z.object({
     .enum(["NEW", "QUALIFIED", "CALLBACK_SCHEDULED", "ESCALATED", "CONVERTED", "LOST", "DORMANT"])
     .optional(),
   priority: z.enum(["P1", "P2", "P3", "P4"]).optional(),
-  leadScore: z.string().optional(),
+  leadScore: z.enum(["HOT", "WARM", "COLD", "VERY_HOT", "LOST", "DORMANT", "RE_ENGAGE"]).optional(),
   intent: z.string().optional(),
   urgency: z.string().optional(),
   sentiment: z.string().optional(),

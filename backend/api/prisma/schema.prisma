@@ -42,6 +42,16 @@ enum CallType {
   HUMAN
 }
 
+enum LeadScore {
+  HOT
+  WARM
+  COLD
+  VERY_HOT
+  LOST
+  DORMANT
+  RE_ENGAGE
+}
+
 model Employee {
   id             String         @id @default(cuid())
   name           String
@@ -69,7 +79,7 @@ model Lead {
   leadSource         String        @default("ai_call")
   status             LeadStatus    @default(NEW)
   priority           LeadPriority?
-  leadScore          String?
+  leadScore          LeadScore?
   intent             String?
   urgency            String?
   sentiment          String?
@@ -104,6 +114,7 @@ model Call {
   sentiment       String?
   durationSeconds Int?
   recordingUrl    String?
+  transcript      String?  @db.Text
   createdAt       DateTime @default(now())
 
   @@index([leadId])

@@ -16,7 +16,7 @@ type Tx = Prisma.TransactionClient;
 async function pickNextEmployee(tx: Tx): Promise<Employee | null> {
   const rows = await tx.$queryRaw<Employee[]>`
     SELECT * FROM "Employee"
-    WHERE status = 'ACTIVE'
+    WHERE status = 'ACTIVE' AND role = 'SALES_EMPLOYEE'
     ORDER BY "lastAssignedAt" ASC NULLS FIRST
     FOR UPDATE SKIP LOCKED
     LIMIT 1
