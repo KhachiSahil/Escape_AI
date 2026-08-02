@@ -1,12 +1,13 @@
 import { Router } from "express";
 
 import { requireAuth, requireServiceKey } from "../middleware/auth";
+import { humanRouteLimiter } from "../middleware/rateLimit";
 import * as escalationService from "../services/escalationService";
 import { createEscalationSchema } from "../validation/schemas";
 
 export const escalationsRouter = Router();
 
-escalationsRouter.get("/", requireAuth("ADMIN", "MANAGER"), async (req, res, next) => {
+escalationsRouter.get("/", humanRouteLimiter, requireAuth("ADMIN", "MANAGER"), async (req, res, next) => {
   try {
     const { status } = req.query;
     const escalations = await escalationService.listEscalations({

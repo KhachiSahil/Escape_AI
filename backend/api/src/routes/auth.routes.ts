@@ -5,11 +5,12 @@ import jwt from "jsonwebtoken";
 import { config } from "../config";
 import { prisma } from "../db";
 import { HttpError } from "../middleware/errorHandler";
+import { loginLimiter } from "../middleware/rateLimit";
 import { loginSchema } from "../validation/schemas";
 
 export const authRouter = Router();
 
-authRouter.post("/login", async (req, res, next) => {
+authRouter.post("/login", loginLimiter, async (req, res, next) => {
   try {
     const { email, password } = loginSchema.parse(req.body);
 

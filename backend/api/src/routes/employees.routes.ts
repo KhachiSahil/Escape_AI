@@ -2,11 +2,12 @@ import { Router } from "express";
 
 import { prisma } from "../db";
 import { requireAuth } from "../middleware/auth";
+import { humanRouteLimiter } from "../middleware/rateLimit";
 import { updateEmployeeStatusSchema } from "../validation/schemas";
 
 export const employeesRouter = Router();
 
-employeesRouter.get("/", requireAuth("ADMIN", "MANAGER"), async (_req, res, next) => {
+employeesRouter.get("/", humanRouteLimiter, requireAuth("ADMIN", "MANAGER"), async (_req, res, next) => {
   try {
     const employees = await prisma.employee.findMany({
       select: {
@@ -25,23 +26,28 @@ employeesRouter.get("/", requireAuth("ADMIN", "MANAGER"), async (_req, res, next
   }
 });
 
-employeesRouter.patch("/:id/status", requireAuth("ADMIN", "MANAGER"), async (req, res, next) => {
-  try {
-    const { status } = updateEmployeeStatusSchema.parse(req.body);
-    const employee = await prisma.employee.update({
-      where: { id: req.params.id },
-      data: { status },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        status: true,
-        lastAssignedAt: true,
-      },
-    });
-    res.json(employee);
-  } catch (err) {
-    next(err);
-  }
-});
+employeesRouter.patch(
+  "/:id/status",
+  humanRouteLimiter,
+  requireAuth("ADMIN", "MANAGER"),
+  async (req, res, next) => {
+    try {
+      const { status } = updateEmployeeStatusSchema.parse(req.body);
+      const employee = await prisma.employee.update({
+        where: { id: req.params.id },
+        data: { status },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          status: true,
+          lastAssignedAt: true,
+        },
+      });
+      res.json(employee);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
