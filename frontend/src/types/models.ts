@@ -62,6 +62,12 @@ export interface Call {
   durationSeconds: number | null
   recordingUrl: string | null
   transcript: string | null
+  goals: string | null
+  painPoints: string | null
+  nextSteps: string | null
+  buyingSignals: string | null
+  objections: string | null
+  recommendedAction: string | null
   createdAt: string
 }
 
