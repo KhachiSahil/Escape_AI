@@ -1,8 +1,45 @@
+import { useEffect } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { useAuth } from '../context/useAuth'
+import { connectSocket, disconnectSocket } from '../lib/socket'
+import type { Lead } from '../types/models'
+
 /**
- * Placeholder for Phase 2d's Socket.IO-backed cache invalidation. Wired up
- * as a no-op now so AppLayout (built in 2c) can mount it unconditionally;
- * fleshed out when the real-time layer lands.
+ * Connects the Socket.IO client once a token exists, and invalidates the
+ * relevant React Query caches on each real-time event rather than manually
+ * splicing the payload into the cache - simpler and self-correcting, and
+ * payloads already carry the full record if a future optimization wants it.
  */
 export function useRealtimeSync(): void {
-  // Intentionally empty until 2d.
+  const { token } = useAuth()
+  const queryClient = useQueryClient()
+
+  useEffect(() => {
+    if (!token) return
+
+    const socket = connectSocket(token)
+
+    const onLeadUpdated = (lead: Lead) => {
+      queryClient.invalidateQueries({ queryKey: ['leads'] })
+      queryClient.invalidateQueries({ queryKey: ['lead', lead.id] })
+    }
+    const onEscalationCreated = () => {
+      queryClient.invalidateQueries({ queryKey: ['escalations'] })
+      queryClient.invalidateQueries({ queryKey: ['leads'] })
+    }
+    const onCallLogged = (call: { leadId: string }) => {
+      queryClient.invalidateQueries({ queryKey: ['lead', call.leadId] })
+    }
+
+    socket.on('lead:updated', onLeadUpdated)
+    socket.on('escalation:created', onEscalationCreated)
+    socket.on('call:logged', onCallLogged)
+
+    return () => {
+      socket.off('lead:updated', onLeadUpdated)
+      socket.off('escalation:created', onEscalationCreated)
+      socket.off('call:logged', onCallLogged)
+      disconnectSocket()
+    }
+  }, [token, queryClient])
 }
