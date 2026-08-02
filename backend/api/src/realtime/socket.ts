@@ -5,6 +5,15 @@ import { Server as SocketIOServer } from "socket.io";
 import { Role } from "@prisma/client";
 import { config } from "../config";
 
+/** Extracts a single named value from a raw `Cookie` header string. */
+function readCookie(cookieHeader: string, name: string): string | undefined {
+  const match = cookieHeader
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${name}=`));
+  return match ? decodeURIComponent(match.slice(name.length + 1)) : undefined;
+}
+
 let io: SocketIOServer | null = null;
 
 interface SocketAuthPayload {
@@ -22,11 +31,18 @@ export const ADMIN_ROOM = "role:admin";
 
 export function initSocket(httpServer: HttpServer): SocketIOServer {
   io = new SocketIOServer(httpServer, {
-    cors: { origin: "*" },
+    cors: { origin: config.corsOrigin, credentials: true },
   });
 
   io.use((socket, next) => {
-    const token = socket.handshake.auth?.token as string | undefined;
+    // Cookie first - Socket.IO's handshake is a real HTTP request, so the
+    // Cookie header is present even though socket.handshake.auth is
+    // JS-supplied and invisible to an httpOnly cookie. Falls back to
+    // auth.token for any client that still passes it explicitly.
+    const cookieHeader = socket.handshake.headers.cookie;
+    const cookieToken = cookieHeader ? readCookie(cookieHeader, "token") : undefined;
+    const token = cookieToken ?? (socket.handshake.auth?.token as string | undefined);
+
     if (!token) {
       return next(new Error("Unauthorized"));
     }

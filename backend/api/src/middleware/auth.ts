@@ -18,13 +18,20 @@ export function requireAuth(...allowedRoles: Role[]) {
       return next();
     }
 
+    // Cookie first (browser sessions), Authorization header as a fallback
+    // (kept supported indefinitely - no downside, and it's what the Python
+    // voice agent's dashboard-adjacent tooling or any non-browser client
+    // would use).
+    const cookieToken = (req as Request & { cookies?: Record<string, string> }).cookies?.token;
     const authHeader = req.header("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
+    const headerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : undefined;
+    const token = cookieToken ?? headerToken;
+
+    if (!token) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
     try {
-      const token = authHeader.slice("Bearer ".length);
       const payload = jwt.verify(token, config.jwtSecret) as { sub: string; role: Role };
       if (allowedRoles.length > 0 && !allowedRoles.includes(payload.role)) {
         return res.status(403).json({ error: "Forbidden" });

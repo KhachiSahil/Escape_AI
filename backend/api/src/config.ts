@@ -12,4 +12,6 @@ export const config = {
   port: Number(process.env.PORT ?? 4000),
   jwtSecret: required("JWT_SECRET"),
   serviceApiKey: required("SERVICE_API_KEY"),
+  corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:5173",
+  nodeEnv: process.env.NODE_ENV ?? "development",
 };

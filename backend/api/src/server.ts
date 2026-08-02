@@ -1,5 +1,6 @@
 import { createServer } from "http";
 
+import cookieParser from "cookie-parser";
 import cors from "cors";
 import express from "express";
 import pinoHttp from "pino-http";
@@ -16,8 +17,9 @@ import { leadsRouter } from "./routes/leads.routes";
 
 const app = express();
 
-app.use(cors());
+app.use(cors({ origin: config.corsOrigin, credentials: true }));
 app.use(express.json());
+app.use(cookieParser());
 app.use(pinoHttp());
 
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
