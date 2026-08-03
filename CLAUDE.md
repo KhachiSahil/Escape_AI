@@ -7,10 +7,17 @@ than rewriting history.
 ## Current Architecture
 
 - **`backend/src/server/`** — Python 3.11 Pipecat voice agent. Entry point
-  `bot.py` wires Deepgram STT → Groq LLM → ElevenLabs TTS over a WebRTC
-  transport. System prompt/knowledge base in `prompts.py`. LLM tool-calling
-  functions in `tools/` — these call the CRM API over HTTP rather than
-  touching any database directly (the Python process has no DB of its own).
+  `bot.py` wires Deepgram STT → Groq LLM → ElevenLabs TTS over either a
+  WebRTC transport (`SmallWebRTCRunnerArguments`) or a telephony transport
+  (`WebSocketRunnerArguments`, via `pipecat.runner.utils.create_transport` —
+  covers Twilio and any other provider Pipecat auto-detects from the Media
+  Streams handshake; see Phase 2h). System prompt/knowledge base in
+  `prompts.py`. LLM tool-calling functions in `tools/` — these call the CRM
+  API over HTTP rather than touching any database directly (the Python
+  process has no DB of its own). `tools/outbound.py` +
+  `trigger_outbound_call.py` originate outbound Twilio calls via the Twilio
+  REST SDK — not LLM-invoked, a separate application concern from the
+  in-conversation tool-calling flow.
 - **`backend/api/`** — Node.js/TypeScript CRM API (Express + Prisma +
   PostgreSQL, hosted on Neon — non-pooled connection, see Phase 2f entry).
   Owns all persistence: Leads, Calls, Employees, Escalations. Exposes REST
@@ -26,14 +33,23 @@ than rewriting history.
   status = 'ACTIVE'`, so concurrent escalations can't double-assign the same
   employee, can't starve anyone, and never assign to Admin/Manager accounts.
   A Socket.IO server (`src/realtime/socket.ts`) attached to the same HTTP
-  server pushes `lead:updated`/`escalation:created`/`call:logged` events to
-  JWT-authenticated clients, room-scoped per employee (`employee:{id}`) and
-  a shared `role:admin` room for ADMIN/MANAGER. `src/services/analyticsService.ts`
-  + `/api/analytics/*` expose dashboard aggregates derived only from fields
-  that actually exist in the schema (no fabricated revenue/missed-call
-  metrics — see the 2c entry below). Verified running end-to-end against the
-  real database (migrations, seed, live HTTP + live voice-call round-trip)
-  as of 2026-08-02.
+  server pushes `lead:updated`/`escalation:created`/`call:logged`/
+  `presence:online`/`presence:offline` events to JWT-authenticated clients,
+  room-scoped per employee (`employee:{id}`) and a shared `role:admin` room
+  for ADMIN/MANAGER; an in-memory `Set` tracks currently-connected employee
+  ids for presence (single-instance deployment only, see Phase 2h).
+  `src/services/analyticsService.ts` + `/api/analytics/*` expose dashboard
+  aggregates derived only from fields that actually exist in the schema (no
+  fabricated revenue/missed-call metrics — see the 2c entry below).
+  `src/services/scoringService.ts` computes `Lead.compositeScore` as a
+  deterministic weighted average of six LLM-set 1-10 sub-scores (see Phase
+  2h). `src/services/notificationService.ts` sends fire-and-forget SMTP
+  email on escalation-assigned/lead-reassigned (never throws — an email
+  outage can't break the mutation that triggered it).
+  `src/services/auditService.ts` writes a fire-and-forget `AuditLog` entry
+  from the same four mutation points that already emit socket events.
+  Verified running end-to-end against the real database (migrations, seed,
+  live HTTP + live voice-call round-trip) as of 2026-08-02.
 - **`frontend/`** — React 19 + TypeScript CRM dashboard (Vite, React Router,
   React Query, Tailwind v4). Auth identity comes from an httpOnly cookie the
   browser attaches automatically (`credentials: 'include'`) — the frontend
@@ -43,13 +59,18 @@ than rewriting history.
   Employee-facing: `/leads` (own assigned leads for SALES_EMPLOYEE, all
   leads for ADMIN/MANAGER, with a score filter/sort), `/leads/:id` (call/
   escalation history, editable status/notes for the assigned employee or
-  any admin/manager). Admin-only (`/admin/*`, role-gated): `/admin/employees`
-  (list + status toggle + performance numbers), `/admin/analytics` (charts
-  using the `dataviz` skill's validated categorical palette + recharts),
-  `/admin/escalations` (read-only queued-escalation visibility). A
-  Socket.IO client (`useRealtimeSync`, mounted in `AppLayout`) invalidates
-  the relevant React Query caches on `lead:updated`/`escalation:created`/
-  `call:logged` events pushed from the backend.
+  any admin/manager, a manual "log a call you handled" form, recording
+  playback where `Call.recordingUrl` is populated, and a composite-score
+  breakdown), `/calls` (Today / All time call list). Admin-only
+  (`/admin/*`, role-gated): `/admin/employees` (list + status toggle +
+  performance numbers + online/offline presence dot), `/admin/analytics`
+  (charts using the `dataviz` skill's validated categorical palette +
+  recharts), `/admin/escalations` (read-only queued-escalation visibility,
+  ordered by lead priority), `/admin/audit-log` (read-only who-changed-what
+  trail). A Socket.IO client (`useRealtimeSync`, mounted in `AppLayout`)
+  invalidates the relevant React Query caches on `lead:updated`/
+  `escalation:created`/`call:logged`/`presence:online`/`presence:offline`
+  events pushed from the backend.
 
 ## Change Log
 
@@ -627,3 +648,155 @@ to include `Call.handledByEmployeeId`; build/typecheck clean.
     upload/playback flow).
 13. A dedicated audit-log/compliance trail beyond Phase 2f's hardening
     (e.g. a who-changed-what `AuditLog` table).
+
+### 2026-08-03 — Phase 2h: outbound calling, multi-factor scoring, 13-gap closure
+
+**Context:** User asked to build both large items Phase 2g deferred
+(outbound/cold-calling via Twilio, a multi-factor lead-scoring engine) plus
+all 13 smaller tracked gaps, sequenced and verified milestone-by-milestone
+like every prior phase. Three read-only research passes (Pipecat's actual
+installed Twilio support, the schema's real data-typing for scoring inputs,
+and the current frontend/backend structure for the 13 gaps) established
+ground truth before planning — see the plan/research notes for full detail;
+key findings are folded into the entries below.
+
+**Outbound calling (Twilio):** `bot.py`'s `match runner_args` gained a
+`case WebSocketRunnerArguments()` branch using
+`pipecat.runner.utils.create_transport(runner_args, TRANSPORT_PARAMS)` —
+confirmed via research that installed `pipecat-ai==1.3.0` already ships a
+`TwilioFrameSerializer` and telephony auto-detection; Twilio, Telnyx,
+Plivo, and Exotel all arrive as the same `WebSocketRunnerArguments` type,
+so no dedicated Twilio transport class was needed. Pipecat itself has zero
+outbound-call-origination logic (confirmed by exhaustive grep) — origination
+is pure application code: new `tools/outbound.py` wraps the `twilio` Python
+SDK's `client.calls.create(to=, from_=, url=<TwiML webhook>)`, exposed via
+a standalone CLI (`trigger_outbound_call.py`), not an LLM-callable tool
+(the LLM never decides mid-conversation to place an outbound call). Once
+Twilio's Media Streams WebSocket connects, the resulting call is
+indistinguishable from an inbound one to the rest of the pipeline — no
+other bot.py/pipeline changes needed. New env vars
+(`TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN`/`TWILIO_PHONE_NUMBER`/
+`TWILIO_TWIML_WEBHOOK_URL`) are placeholder values (matching how
+`EDTECH_KNOWLEDGE_BASE` already handles unfilled business specifics) —
+real credentials and live-call verification are the user's to supply and
+test; code-level verification here covered dependency install, import
+resolution, and exercising the new `match` branch with a synthetic Twilio
+`start` event.
+
+**Multi-factor lead scoring engine:** research confirmed the original
+spec's 8 named factors (budget/urgency/interest/buying-signals/
+conversation-quality/course-fit/availability/decision-timeline) are almost
+entirely free text in this schema (`Lead.budget`/`intent`/`urgency`/
+`sentiment`, `Call.buyingSignals`/`objections`/etc. are all `String?`/
+`@db.Text`) — a literal "weighted rules engine over raw data" wasn't
+mechanically buildable. Per user decision: added 6 new nullable `Int`
+columns on `Lead` (`budgetScore`/`urgencyScore`/`interestScore`/
+`buyingSignalsScore`/`courseFitScore`/`callQualityScore`, each 1-10,
+LLM-set via an expanded `update_lead_function` schema — existing free-text
+fields are unchanged, sub-scores are a structured addition) plus
+`compositeScore Float?`, written only by the backend
+(`scoringService.computeCompositeScore`, a pure weighted-average function
+over whichever sub-scores are set — returns `null` if none are set rather
+than a misleading 0) whenever `leadService.updateLead`'s payload touches
+any sub-score field. Weights live in a named, documented-as-tunable
+constant (`SCORE_WEIGHTS`), not inline magic numbers.
+`LeadsListPage`/`LeadDetailPage` surface sort-by-composite-score and a
+score breakdown respectively.
+
+**13 gaps — all resolved or explicitly re-deferred with a stated reason:**
+
+1. **Round-robin priority-queue integration** — `escalationService.listEscalations`
+   now sorts `status=queued` results by lead priority (P1/P2 first) then
+   `createdAt`. This only affects `AdminEscalationsPage`'s display/
+   manual-pickup ordering — round-robin employee-selection fairness is
+   unchanged, and this does not preempt an already-assigned lower-priority
+   escalation, matching the original spec's own framing of true
+   preemption as a future enhancement.
+8. **Manual human-call logging UI** — `POST /api/calls` now accepts
+   `requireAuth()` (JWT or service key) instead of service-key-only, so
+   `LeadDetailPage`'s new "log a call you handled" form can submit a
+   `callType: "HUMAN"` call as the assigned employee or an admin/manager.
+9. **Escalation-to-call auto-linking** — `callService.createCall` looks up
+   the lead's most recent non-resolved escalation and auto-populates
+   `handledByEmployeeId` when a `HUMAN` call omits it.
+10. **Dedicated dashboard views** — new `GET /api/calls` (didn't exist
+    before; calls were only readable nested under a lead) with
+    `createdAt`/`leadId`/`handledByEmployeeId` filters, backing a new
+    `/calls` page (Today / All time). `GET /api/leads` gained a
+    `nextFollowUp` range filter and a free-text name/phone/email search
+    param; `LeadsListPage` gained an "upcoming follow-up" toggle rather
+    than a separate page, avoiding duplication. "Completed Calls" is
+    scoped honestly as "all Call rows in range" — no lifecycle-state
+    concept exists on `Call`, documented as a known simplification rather
+    than inventing new schema this phase.
+12. **Call recording playback UI** — an `<audio controls>` element renders
+    wherever `Call.recordingUrl` is already populated. Actual recording
+    *capture* stays explicitly deferred — it needs a Pipecat
+    audio-frame-to-storage decision not made anywhere in this project.
+11. **Email notifications** — per user decision, email-only via SMTP
+    (`nodemailer`), no SMS. New `notificationService.ts` (lazily-created,
+    reused transporter, matching `tools/api_client.py`'s existing pattern)
+    wired into exactly two mutation points: `escalationService.createEscalation`
+    (assigned employee, or an admin fallback address when queued) and
+    `leadService.updateLead` when `assignedEmployeeId` actually changes
+    value. Failures are logged, never thrown.
+3. **Presence indicators (partial)** — reuses the existing
+   `employee:{id}`/`role:admin` room architecture: an in-memory `Set` of
+   connected employee ids, `presence:online`/`presence:offline` events on
+   connect/disconnect, `GET /api/employees/online` for initial state,
+   an online/offline dot on `AdminEmployeesPage`. Documented as a
+   single-instance-deployment limitation (no Redis-backed shared store) —
+   not built out speculatively since nothing here runs multi-instance
+   today. **Live call transcription streaming (the other half of this gap)
+   stays blocked** — no `TranscriptProcessor` in the installed Pipecat
+   version, confirmed by Phase 2e's own research.
+13. **Audit log** — new `AuditLog` model (`entityType`/`entityId`/`action`/
+    `actorId`/`changes` JSON/`createdAt`), `auditService.logAudit()`
+    (fire-and-forget, never throws) called from the same four mutation
+    points that already emit socket events (`leadService.updateLead`,
+    `escalationService.createEscalation`, `callService.createCall`, the
+    employee status-toggle route). New admin-only `GET /api/audit-log` +
+    read-only `AdminAuditLogPage`.
+4. **RBAC granularity — reviewed, no code change** (per user decision).
+   Confirmed via exhaustive grep that `MANAGER` is never checked apart from
+   `ADMIN` anywhere in `backend/api/src` — every occurrence pairs them in
+   an identical allow-list or room-join condition, a deliberate Phase 2d
+   design choice, not an oversight. A formal `AI_AGENT` role was considered
+   and declined — the service-key mechanism already cleanly models that
+   identity outside the JWT/`Role` system.
+
+**Explicitly still deferred, not attempted this phase (unchanged from
+Phase 2g's framing, re-confirmed rather than silently dropped):**
+- Gap 2 — full analytics/reporting dashboards (AI Activities log, System
+  Health, Assignment Logs, Daily/Weekly/Monthly Reports, AI Success Rate,
+  Conversion Funnel visualization). Revenue Forecast and any metric needing
+  deal-value/call-attempt-outcome data remain **not buildable** from the
+  current schema. The buildable remainder is large enough to warrant its
+  own focused phase (2i) rather than a rushed partial addition on top of
+  this phase's already-large scope.
+- Gap 5 — conversation transcript persistent storage. Still blocked: no
+  Pipecat transcript-processor API in the installed version.
+- Gaps 6/7 — `tags`/`metadata` JSON blobs and a separate `location` column
+  on `Lead`. Still no concrete UI consumer proposed anywhere in this
+  phase's scope; remain deferred per the Foundation phase's standing
+  anti-overengineering decision.
+
+**Schema (one additive migration,
+`20260803165917_add_lead_scoring_and_audit_log`):** the 6 sub-score `Int`
+columns + `compositeScore Float?` on `Lead`, and the new `AuditLog` model —
+batched into one migration rather than one per feature.
+
+**Verified this session:** Python side — `uv sync` installs the new
+`twilio` SDK cleanly; `bot.py` and the new `tools/outbound.py`/
+`trigger_outbound_call.py` import without error; `ruff`/`pyright` clean;
+all 13 Python tests pass (extended with a sub-score-forwarding test for
+`update_lead`). Backend/api — `tsc --noEmit` and `eslint` clean throughout
+(only pre-existing, unrelated warnings); 53 vitest tests pass (up from 30
+at the end of Phase 2g), covering the scoring formula, composite-score
+recomputation, queued-escalation priority ordering, the escalation-to-call
+auto-link, notification triggers (including SMTP-not-configured no-op and
+transporter-failure paths), and audit-log writes. Frontend — `tsc -b &&
+vite build` clean at every milestone. **Not verified live this session**
+(needs real external credentials/data the user supplies): an actual
+Twilio call end-to-end, real SMTP email delivery, and recording playback
+against a real `recordingUrl`.
