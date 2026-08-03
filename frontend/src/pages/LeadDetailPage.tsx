@@ -94,6 +94,29 @@ export function LeadDetailPage() {
           <dd className="whitespace-pre-wrap">{lead.notes ?? '—'}</dd>
         </dl>
 
+        <div className="mt-4 border-t border-gray-100 pt-4">
+          <h2 className="text-sm font-medium text-gray-900">
+            Composite score{' '}
+            <span className="font-normal text-gray-500">
+              {lead.compositeScore != null ? lead.compositeScore.toFixed(1) : '— not enough signal yet'}
+            </span>
+          </h2>
+          <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-600">
+            <dt>Budget</dt>
+            <dd>{lead.budgetScore ?? '—'}</dd>
+            <dt>Urgency</dt>
+            <dd>{lead.urgencyScore ?? '—'}</dd>
+            <dt>Interest</dt>
+            <dd>{lead.interestScore ?? '—'}</dd>
+            <dt>Buying signals</dt>
+            <dd>{lead.buyingSignalsScore ?? '—'}</dd>
+            <dt>Course fit</dt>
+            <dd>{lead.courseFitScore ?? '—'}</dd>
+            <dt>Call quality</dt>
+            <dd>{lead.callQualityScore ?? '—'}</dd>
+          </dl>
+        </div>
+
         {canEdit && (
           <form onSubmit={handleSubmit} className="mt-6 space-y-3 border-t border-gray-100 pt-4">
             <h2 className="text-sm font-medium text-gray-900">Update lead</h2>

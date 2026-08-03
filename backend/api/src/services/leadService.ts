@@ -3,6 +3,13 @@ import { Prisma, Role } from "@prisma/client";
 import { prisma } from "../db";
 import { HttpError } from "../middleware/errorHandler";
 import { ADMIN_ROOM, employeeRoom, getIO } from "../realtime/socket";
+import { computeCompositeScore, SCORE_WEIGHTS, type ScorableLead } from "./scoringService";
+
+const SUB_SCORE_KEYS = Object.keys(SCORE_WEIGHTS) as (keyof typeof SCORE_WEIGHTS)[];
+const scoreSelect = Object.fromEntries(SUB_SCORE_KEYS.map((key) => [key, true])) as Record<
+  keyof typeof SCORE_WEIGHTS,
+  true
+>;
 
 export interface Actor {
   id: string;
@@ -51,6 +58,17 @@ export async function updateLead(
     // Employees may not reassign leads to someone else.
     const { assignedEmployeeId: _ignored, ...rest } = payload;
     payload = rest;
+  }
+
+  if (SUB_SCORE_KEYS.some((key) => key in payload)) {
+    const existing = await prisma.lead.findUnique({ where: { id }, select: scoreSelect });
+    if (!existing) throw new HttpError(404, "Lead not found");
+    const merged: ScorableLead = { ...existing };
+    for (const key of SUB_SCORE_KEYS) {
+      const value = payload[key];
+      if (typeof value === "number" || value === null) merged[key] = value;
+    }
+    payload = { ...payload, compositeScore: computeCompositeScore(merged) };
   }
 
   let updated;

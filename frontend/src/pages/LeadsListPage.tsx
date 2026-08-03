@@ -22,7 +22,7 @@ export function LeadsListPage() {
   const { employee } = useAuth()
   const isEmployeeOnly = employee?.role === 'SALES_EMPLOYEE'
   const [scoreFilter, setScoreFilter] = useState<LeadScore | ''>('')
-  const [sortByScore, setSortByScore] = useState(false)
+  const [sortBy, setSortBy] = useState<'' | 'leadScore' | 'compositeScore'>('')
 
   const query = useQuery({
     queryKey: ['leads', isEmployeeOnly ? employee?.id : 'all'],
@@ -38,15 +38,17 @@ export function LeadsListPage() {
     if (scoreFilter) {
       result = result.filter((lead) => lead.leadScore === scoreFilter)
     }
-    if (sortByScore) {
+    if (sortBy === 'leadScore') {
       result = [...result].sort((a, b) => {
         const rankA = a.leadScore ? SCORE_RANK[a.leadScore] : 99
         const rankB = b.leadScore ? SCORE_RANK[b.leadScore] : 99
         return rankA - rankB
       })
+    } else if (sortBy === 'compositeScore') {
+      result = [...result].sort((a, b) => (b.compositeScore ?? -1) - (a.compositeScore ?? -1))
     }
     return result
-  }, [query.data, scoreFilter, sortByScore])
+  }, [query.data, scoreFilter, sortBy])
 
   return (
     <div className="mx-auto max-w-5xl p-6">
@@ -67,14 +69,15 @@ export function LeadsListPage() {
               </option>
             ))}
           </select>
-          <label className="flex items-center gap-1.5 text-sm text-gray-600">
-            <input
-              type="checkbox"
-              checked={sortByScore}
-              onChange={(e) => setSortByScore(e.target.checked)}
-            />
-            Sort by score
-          </label>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+            className="rounded border border-gray-300 px-2 py-1.5 text-sm"
+          >
+            <option value="">No sort</option>
+            <option value="leadScore">Sort by lead score</option>
+            <option value="compositeScore">Sort by composite score</option>
+          </select>
         </div>
       </div>
 

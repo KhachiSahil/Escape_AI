@@ -39,6 +39,13 @@ export interface Lead {
   intent: string | null
   urgency: string | null
   sentiment: string | null
+  budgetScore: number | null
+  urgencyScore: number | null
+  interestScore: number | null
+  buyingSignalsScore: number | null
+  courseFitScore: number | null
+  callQualityScore: number | null
+  compositeScore: number | null
   notes: string | null
   language: string | null
   nextFollowUp: string | null
@@ -117,6 +124,12 @@ export interface UpdateLeadInput {
   notes?: string
   language?: string
   assignedEmployeeId?: string
+  budgetScore?: number
+  urgencyScore?: number
+  interestScore?: number
+  buyingSignalsScore?: number
+  courseFitScore?: number
+  callQualityScore?: number
 }
 
 export interface AnalyticsOverview {

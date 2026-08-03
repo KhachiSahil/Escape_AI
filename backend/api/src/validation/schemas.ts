@@ -39,6 +39,12 @@ export const updateLeadSchema = z.object({
   notes: longText().optional(),
   language: shortText().optional(),
   assignedEmployeeId: z.string().cuid().optional(),
+  budgetScore: z.number().int().min(1).max(10).optional(),
+  urgencyScore: z.number().int().min(1).max(10).optional(),
+  interestScore: z.number().int().min(1).max(10).optional(),
+  buyingSignalsScore: z.number().int().min(1).max(10).optional(),
+  courseFitScore: z.number().int().min(1).max(10).optional(),
+  callQualityScore: z.number().int().min(1).max(10).optional(),
 });
 
 export const scheduleCallbackSchema = z.object({

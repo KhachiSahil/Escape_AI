@@ -70,14 +70,18 @@ update_lead_function = FunctionSchema(
     name="update_lead",
     description=(
         "Update the lead record as you learn more during the call - "
-        "buying intent, urgency, notes, lead score, status, or priority. Only "
-        "include fields you actually learned; never overwrite with guesses. "
+        "buying intent, urgency, notes, lead score, status, priority, or the "
+        "numeric 1-10 sub-scores (budgetScore/urgencyScore/interestScore/"
+        "buyingSignalsScore/courseFitScore/callQualityScore). Only include "
+        "fields you actually learned; never overwrite with guesses. "
         "Set leadScore/status when the caller shows strong buying signals "
         "(e.g. leadScore=HOT, status=QUALIFIED) or clearly disengages "
         "(e.g. leadScore=LOST, status=LOST). Set priority (P1-P4) based on how "
         "urgent and time-sensitive their interest is, independent of how "
         "positive/negative leadScore is - a HOT lead exploring for next year is "
-        "P3-P4, not P1."
+        "P3-P4, not P1. The numeric sub-scores feed a separate composite "
+        "scoring formula - set them whenever you have real signal for that "
+        "specific factor, independent of leadScore/priority."
     ),
     properties={
         "leadId": {"type": "string", "description": "The lead id returned by create_lead"},
@@ -109,6 +113,51 @@ update_lead_function = FunctionSchema(
                 "exploring, no urgency signals yet. Set this whenever you "
                 "have enough signal to judge urgency, and update it if that "
                 "signal changes during the call."
+            ),
+        },
+        "budgetScore": {
+            "type": "integer",
+            "description": (
+                "1-10: how ready/able the caller is to pay. 1 = no budget or "
+                "explicitly can't afford it, 10 = budget confirmed and ready "
+                "to pay now. Only set once you have real signal, not a guess."
+            ),
+        },
+        "urgencyScore": {
+            "type": "integer",
+            "description": (
+                "1-10: how time-sensitive their interest is. 1 = no urgency, "
+                "just browsing, 10 = wants to start immediately."
+            ),
+        },
+        "interestScore": {
+            "type": "integer",
+            "description": (
+                "1-10: overall genuine interest/engagement level in the "
+                "conversation, independent of budget or urgency."
+            ),
+        },
+        "buyingSignalsScore": {
+            "type": "integer",
+            "description": (
+                "1-10: strength of concrete buying signals observed (e.g. "
+                "asking about payment steps, batch start dates) vs. none."
+            ),
+        },
+        "courseFitScore": {
+            "type": "integer",
+            "description": (
+                "1-10: how well the caller's stated goals/background actually "
+                "fit the course they're interested in."
+            ),
+        },
+        "callQualityScore": {
+            "type": "integer",
+            "description": (
+                "1-10: quality/depth of this conversation itself (e.g. a "
+                "short, evasive call scores low; a substantive, engaged "
+                "conversation scores high), independent of the caller's "
+                "buying intent."
             ),
         },
     },

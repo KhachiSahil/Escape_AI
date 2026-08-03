@@ -91,3 +91,40 @@ describe("updateLead ownership authorization", () => {
     expect(mockUpdate).toHaveBeenCalledWith({ where: { id: "lead-1" }, data: { priority: "P1" } });
   });
 });
+
+describe("updateLead composite score recomputation", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("recomputes compositeScore when a sub-score field is in the payload", async () => {
+    mockFindUnique.mockResolvedValue({
+      budgetScore: null,
+      urgencyScore: null,
+      interestScore: null,
+      buyingSignalsScore: null,
+      courseFitScore: null,
+      callQualityScore: null,
+    });
+    mockUpdate.mockResolvedValue({ id: "lead-1" });
+
+    await updateLead("lead-1", { budgetScore: 8 }, { id: "admin-1", role: "ADMIN" });
+
+    expect(mockUpdate).toHaveBeenCalledWith({
+      where: { id: "lead-1" },
+      data: { budgetScore: 8, compositeScore: 8 },
+    });
+  });
+
+  it("does not touch compositeScore or query the existing lead on an unrelated update", async () => {
+    mockUpdate.mockResolvedValue({ id: "lead-1" });
+
+    await updateLead("lead-1", { notes: "just a note" }, { id: "admin-1", role: "ADMIN" });
+
+    expect(mockFindUnique).not.toHaveBeenCalled();
+    expect(mockUpdate).toHaveBeenCalledWith({
+      where: { id: "lead-1" },
+      data: { notes: "just a note" },
+    });
+  });
+});

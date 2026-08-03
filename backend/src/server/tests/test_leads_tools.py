@@ -83,6 +83,42 @@ async def test_update_lead_is_fire_and_forget():
 
 
 @pytest.mark.asyncio
+async def test_update_lead_forwards_numeric_sub_scores():
+    """The 6 numeric sub-score fields (Phase 2h scoring engine) must pass
+    through update_lead's payload unchanged, same as any other field."""
+    params = FakeParams(
+        {
+            "leadId": "lead-1",
+            "budgetScore": 8,
+            "urgencyScore": 6,
+            "interestScore": 9,
+            "buyingSignalsScore": 5,
+            "courseFitScore": 7,
+            "callQualityScore": 4,
+        }
+    )
+    request_mock = AsyncMock(return_value={})
+    with patch("tools.leads.request", new=request_mock):
+        await leads.update_lead(params.as_params())
+
+    import asyncio
+
+    await asyncio.sleep(0)
+    request_mock.assert_awaited_once_with(
+        "PATCH",
+        "/api/leads/lead-1",
+        json={
+            "budgetScore": 8,
+            "urgencyScore": 6,
+            "interestScore": 9,
+            "buyingSignalsScore": 5,
+            "courseFitScore": 7,
+            "callQualityScore": 4,
+        },
+    )
+
+
+@pytest.mark.asyncio
 async def test_update_lead_missing_lead_id():
     params = FakeParams({"notes": "some note"})
     await leads.update_lead(params.as_params())

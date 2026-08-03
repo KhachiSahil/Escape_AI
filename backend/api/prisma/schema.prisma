@@ -85,6 +85,17 @@ model Lead {
   intent             String?
   urgency            String?
   sentiment          String?
+  // Multi-factor scoring: 1-10 sub-scores set by the LLM per factor, plus a
+  // backend-computed weighted composite (see scoringService.ts). The
+  // free-text intent/urgency/sentiment/budget fields above are unchanged -
+  // these are a structured addition, not a replacement.
+  budgetScore        Int?
+  urgencyScore       Int?
+  interestScore      Int?
+  buyingSignalsScore Int?
+  courseFitScore     Int?
+  callQualityScore   Int?
+  compositeScore     Float?
   notes              String?
   language           String?
   nextFollowUp       DateTime?
@@ -144,4 +155,17 @@ model Escalation {
 
   @@index([leadId])
   @@index([assignedEmployeeId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  entityType String
+  entityId   String
+  action     String
+  actorId    String?
+  changes    Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorId])
 }
