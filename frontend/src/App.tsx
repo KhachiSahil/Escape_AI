@@ -6,6 +6,7 @@ import { CallsPage } from './pages/CallsPage'
 import { AdminEmployeesPage } from './pages/admin/AdminEmployeesPage'
 import { AdminAnalyticsPage } from './pages/admin/AdminAnalyticsPage'
 import { AdminEscalationsPage } from './pages/admin/AdminEscalationsPage'
+import { AdminAuditLogPage } from './pages/admin/AdminAuditLogPage'
 import { AppLayout } from './components/AppLayout'
 import { RequireAuth } from './routes/RequireAuth'
 
@@ -46,6 +47,14 @@ function App() {
           element={
             <RequireAuth roles={[...ADMIN_ROLES]}>
               <AdminEscalationsPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/admin/audit-log"
+          element={
+            <RequireAuth roles={[...ADMIN_ROLES]}>
+              <AdminAuditLogPage />
             </RequireAuth>
           }
         />

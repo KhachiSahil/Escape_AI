@@ -2,8 +2,9 @@ import { Prisma } from "@prisma/client";
 
 import { prisma } from "../db";
 import { ADMIN_ROOM, employeeRoom, getIO } from "../realtime/socket";
+import { logAudit } from "./auditService";
 
-export async function createCall(data: Prisma.CallUncheckedCreateInput) {
+export async function createCall(data: Prisma.CallUncheckedCreateInput, actorId?: string) {
   let payload = data;
 
   // Escalation-to-call auto-linking: a manually-logged HUMAN call that
@@ -31,6 +32,14 @@ export async function createCall(data: Prisma.CallUncheckedCreateInput) {
   if (lead.assignedEmployeeId) {
     io.to(employeeRoom(lead.assignedEmployeeId)).emit("call:logged", callFields);
   }
+
+  logAudit({
+    entityType: "Call",
+    entityId: callFields.id,
+    action: "created",
+    actorId,
+    changes: { leadId: callFields.leadId, callType: callFields.callType },
+  });
 
   return callFields;
 }

@@ -2,6 +2,7 @@ import { Prisma, Role } from "@prisma/client";
 
 import { prisma } from "../db";
 import { HttpError } from "../middleware/errorHandler";
+import { logAudit } from "./auditService";
 import { sendEmail } from "./notificationService";
 import { ADMIN_ROOM, employeeRoom, getIO } from "../realtime/socket";
 import { computeCompositeScore, SCORE_WEIGHTS, type ScorableLead } from "./scoringService";
@@ -115,6 +116,14 @@ export async function updateLead(
   if (isReassigning && updated.assignedEmployeeId && updated.assignedEmployeeId !== previousAssignee) {
     notifyReassignment(updated.id, updated.assignedEmployeeId);
   }
+
+  logAudit({
+    entityType: "Lead",
+    entityId: updated.id,
+    action: "updated",
+    actorId: actor?.id,
+    changes: payload as Record<string, unknown>,
+  });
 
   return updated;
 }

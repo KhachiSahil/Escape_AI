@@ -173,3 +173,13 @@ export interface EscalationWithLead extends Escalation {
   lead: Lead
   assignedEmployee: Employee | null
 }
+
+export interface AuditLogEntry {
+  id: string
+  entityType: string
+  entityId: string
+  action: string
+  actorId: string | null
+  changes: Record<string, unknown> | null
+  createdAt: string
+}

@@ -21,6 +21,7 @@ vi.mock("../db", () => ({
 }));
 
 vi.mock("./notificationService", () => ({ sendEmail: mockSendEmail }));
+vi.mock("./auditService", () => ({ logAudit: vi.fn() }));
 
 vi.mock("../realtime/socket", () => ({
   getIO: () => ({ to: mockTo }),

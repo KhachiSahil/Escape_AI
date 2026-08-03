@@ -9,6 +9,7 @@ import { config } from "./config";
 import { errorHandler } from "./middleware/errorHandler";
 import { initSocket } from "./realtime/socket";
 import { analyticsRouter } from "./routes/analytics.routes";
+import { auditLogRouter } from "./routes/auditLog.routes";
 import { authRouter } from "./routes/auth.routes";
 import { callsRouter } from "./routes/calls.routes";
 import { employeesRouter } from "./routes/employees.routes";
@@ -30,6 +31,7 @@ app.use("/api/calls", callsRouter);
 app.use("/api/escalations", escalationsRouter);
 app.use("/api/employees", employeesRouter);
 app.use("/api/analytics", analyticsRouter);
+app.use("/api/audit-log", auditLogRouter);
 
 app.use(errorHandler);
 

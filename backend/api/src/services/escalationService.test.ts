@@ -42,6 +42,7 @@ vi.mock("../realtime/socket", () => ({
 }));
 
 vi.mock("./notificationService", () => ({ sendEmail: mockSendEmail }));
+vi.mock("./auditService", () => ({ logAudit: vi.fn() }));
 
 vi.mock("../config", () => ({
   config: { adminNotificationEmail: "admin@example.com" },

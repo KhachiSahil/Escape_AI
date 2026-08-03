@@ -19,6 +19,8 @@ vi.mock("../realtime/socket", () => ({
   ADMIN_ROOM: "role:admin",
 }));
 
+vi.mock("./auditService", () => ({ logAudit: vi.fn() }));
+
 import { createCall } from "./callService";
 
 describe("createCall escalation-to-call auto-linking", () => {

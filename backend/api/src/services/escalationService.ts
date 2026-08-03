@@ -3,6 +3,7 @@ import { Employee, Prisma } from "@prisma/client";
 import { config } from "../config";
 import { prisma } from "../db";
 import { ADMIN_ROOM, employeeRoom, getIO } from "../realtime/socket";
+import { logAudit } from "./auditService";
 import { sendEmail } from "./notificationService";
 
 type Tx = Prisma.TransactionClient;
@@ -98,6 +99,13 @@ export async function createEscalation(input: { leadId: string; reason: string; 
   }
 
   notifyEscalation(result.escalation, result.assignedEmployee);
+
+  logAudit({
+    entityType: "Escalation",
+    entityId: result.escalation.id,
+    action: "created",
+    changes: { leadId: input.leadId, reason: input.reason, status: result.escalation.status },
+  });
 
   return result;
 }

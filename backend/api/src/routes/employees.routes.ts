@@ -1,9 +1,10 @@
 import { Router } from "express";
 
 import { prisma } from "../db";
-import { requireAuth } from "../middleware/auth";
+import { AuthedRequest, requireAuth } from "../middleware/auth";
 import { humanRouteLimiter } from "../middleware/rateLimit";
 import { getOnlineEmployeeIds } from "../realtime/socket";
+import { logAudit } from "../services/auditService";
 import { updateEmployeeStatusSchema } from "../validation/schemas";
 
 export const employeesRouter = Router();
@@ -40,7 +41,7 @@ employeesRouter.patch(
   "/:id/status",
   humanRouteLimiter,
   requireAuth("ADMIN", "MANAGER"),
-  async (req, res, next) => {
+  async (req: AuthedRequest, res, next) => {
     try {
       const { status } = updateEmployeeStatusSchema.parse(req.body);
       const employee = await prisma.employee.update({
@@ -54,6 +55,13 @@ employeesRouter.patch(
           status: true,
           lastAssignedAt: true,
         },
+      });
+      logAudit({
+        entityType: "Employee",
+        entityId: employee.id,
+        action: "status_changed",
+        actorId: req.employee?.id,
+        changes: { status },
       });
       res.json(employee);
     } catch (err) {
