@@ -32,11 +32,27 @@ async function pickNextEmployee(tx: Tx): Promise<Employee | null> {
   return employee;
 }
 
-export function listEscalations(filters: { status?: string } = {}) {
-  return prisma.escalation.findMany({
+// P1/P2 leads sort first among queued escalations (display/manual-pickup
+// ordering only - does not affect which employee round-robin picks, and
+// does not preempt an already-assigned escalation). True priority
+// preemption is out of scope, per the original spec's own framing of this
+// as a future enhancement.
+const PRIORITY_RANK: Record<string, number> = { P1: 0, P2: 1, P3: 2, P4: 3 };
+
+export async function listEscalations(filters: { status?: string } = {}) {
+  const escalations = await prisma.escalation.findMany({
     where: filters.status ? { status: filters.status } : undefined,
     include: { lead: true, assignedEmployee: true },
     orderBy: { createdAt: "asc" },
+  });
+
+  if (filters.status !== "queued") return escalations;
+
+  return [...escalations].sort((a, b) => {
+    const rankA = a.lead.priority ? PRIORITY_RANK[a.lead.priority] : 99;
+    const rankB = b.lead.priority ? PRIORITY_RANK[b.lead.priority] : 99;
+    if (rankA !== rankB) return rankA - rankB;
+    return a.createdAt.getTime() - b.createdAt.getTime();
   });
 }
 

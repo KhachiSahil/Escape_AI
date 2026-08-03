@@ -1,11 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mockQueryRaw = vi.fn();
-const mockEmployeeUpdate = vi.fn();
-const mockEscalationCreate = vi.fn();
-const mockLeadUpdate = vi.fn();
-const mockEmit = vi.fn();
-const mockTo = vi.fn(() => ({ emit: mockEmit }));
+const { mockQueryRaw, mockEmployeeUpdate, mockEscalationCreate, mockLeadUpdate, mockEscalationFindMany, mockTo } =
+  vi.hoisted(() => {
+    const mockEmit = vi.fn();
+    return {
+      mockQueryRaw: vi.fn(),
+      mockEmployeeUpdate: vi.fn(),
+      mockEscalationCreate: vi.fn(),
+      mockLeadUpdate: vi.fn(),
+      mockEscalationFindMany: vi.fn(),
+      mockTo: vi.fn(() => ({ emit: mockEmit })),
+    };
+  });
 
 vi.mock("../db", () => ({
   prisma: {
@@ -17,7 +23,7 @@ vi.mock("../db", () => ({
         lead: { update: mockLeadUpdate },
       }),
     ),
-    escalation: { findMany: vi.fn() },
+    escalation: { findMany: mockEscalationFindMany },
   },
 }));
 
@@ -27,7 +33,7 @@ vi.mock("../realtime/socket", () => ({
   ADMIN_ROOM: "role:admin",
 }));
 
-import { createEscalation } from "./escalationService";
+import { createEscalation, listEscalations } from "./escalationService";
 
 describe("createEscalation", () => {
   beforeEach(() => {
@@ -84,5 +90,46 @@ describe("createEscalation", () => {
       expect.any(Function),
       { maxWait: 5000, timeout: 10000 },
     );
+  });
+});
+
+describe("listEscalations queued-priority ordering", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("sorts queued escalations by lead priority (P1 first), then createdAt", async () => {
+    const older = {
+      id: "esc-p3",
+      createdAt: new Date("2026-01-01T00:00:00Z"),
+      lead: { priority: "P3" },
+    };
+    const newerP1 = {
+      id: "esc-p1",
+      createdAt: new Date("2026-01-02T00:00:00Z"),
+      lead: { priority: "P1" },
+    };
+    const noPriority = {
+      id: "esc-none",
+      createdAt: new Date("2026-01-01T12:00:00Z"),
+      lead: { priority: null },
+    };
+    mockEscalationFindMany.mockResolvedValue([older, newerP1, noPriority]);
+
+    const result = await listEscalations({ status: "queued" });
+
+    expect(result.map((e) => e.id)).toEqual(["esc-p1", "esc-p3", "esc-none"]);
+  });
+
+  it("does not reorder non-queued escalation lists", async () => {
+    const rows = [
+      { id: "esc-a", createdAt: new Date("2026-01-01T00:00:00Z"), lead: { priority: "P4" } },
+      { id: "esc-b", createdAt: new Date("2026-01-02T00:00:00Z"), lead: { priority: "P1" } },
+    ];
+    mockEscalationFindMany.mockResolvedValue(rows);
+
+    const result = await listEscalations({ status: "assigned" });
+
+    expect(result.map((e) => e.id)).toEqual(["esc-a", "esc-b"]);
   });
 });
