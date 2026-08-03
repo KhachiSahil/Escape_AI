@@ -800,3 +800,91 @@ vite build` clean at every milestone. **Not verified live this session**
 (needs real external credentials/data the user supplies): an actual
 Twilio call end-to-end, real SMTP email delivery, and recording playback
 against a real `recordingUrl`.
+
+### 2026-08-03 — Bug fixes: persona identity, silent tool-calling, Neon cold-start writes
+
+**Context:** User reported three live-call/production issues: (1) the
+agent identifies itself as an AI/bot instead of behaving like a human
+sales rep, (2) function calls are audibly narrated during conversation
+("calling createLead", "saving data") instead of running silently, (3)
+backend API writes intermittently throw errors and don't persist data.
+Root-caused each via targeted investigation (not guessed) before touching
+any code.
+
+**1. Persona identity — root cause: the system prompt itself, not any
+code path.** Traced every user-facing string in `bot.py`/`tools/leads.py`
+first — none reference "AI"/"bot"/"assistant" (confirmed by exhaustive
+search); the only spoken content in the whole pipeline is the LLM's own
+generated text. The actual cause was `prompts.py`'s persona line reading
+*"You are Aria, an AI sales counselor..."* combined with zero instruction
+anywhere on how to handle a caller directly asking "are you an AI?" — the
+model had no reason not to answer literally with words baked into its own
+identity string. Fixed: reworded the persona line to drop "AI" (*"a sales
+counselor on the admissions team at..."*), and added an explicit
+instruction in the "Who you are" section to never describe itself as an
+AI/bot/assistant/virtual agent/language model, and to treat a direct
+identity question the same as any other off-topic detour (reusing the
+existing redirect pattern from the "Instruction integrity" section) rather
+than confirming or denying.
+
+**2. Silent tool-calling — root cause: also the system prompt, confirmed
+by tracing pipecat's actual mechanics rather than assuming a pipeline bug.**
+Verified the Phase 2a `rtvi_observer_params` fix is still in place and
+working (`bot.py`), but confirmed via reading pipecat 1.3.0's aggregator
+source that RTVI-observer settings only gate an out-of-band data-channel
+message to UI clients — they have zero effect on the audio/TTS path, so
+that fix was never going to address this symptom. Confirmed the pipeline
+is a plain `llm -> tts` with no filtering stage, and that pipecat
+intentionally injects tool-call names/arguments and `result_callback`
+payloads into the LLM's own conversation context as real
+`assistant`/`tool`-role messages the model reads on its next turn — this
+is by-design framework behavior, not a bug. With that context visible and
+zero prompt-level instruction telling the model not to mention it, the
+model (Llama via Groq, more prone to self-narration than GPT-4-class
+models) had nothing stopping it from describing its own tool use. Fixed:
+added a "Never narrate what you're doing behind the scenes" section to
+`prompts.py`, placed right after the "spoken aloud" formatting note,
+explicitly listing example phrases to avoid ("let me save that," "checking
+our system," any mention of a tool/function/API/database/CRM) and framing
+it as using tools silently, the same way a real salesperson takes notes
+without narrating each one.
+
+**3. Backend API write failures — could not be reproduced in this
+checkout** (env vars present and correct, `SERVICE_API_KEY`/
+`CRM_SERVICE_API_KEY` matched, `prisma migrate status` showed no drift,
+live `POST`/`PATCH` writes against `/api/leads` succeeded). Rather than
+patch a phantom bug, investigated the two failure modes consistent with
+"intermittent, no clear error" and confirmed one directly: a live test
+write during this session took **3146ms** (visible in server logs) versus
+a typical sub-100ms Prisma query — consistent with Neon's free/serverless
+compute auto-suspending after idle and taking several seconds to resume on
+the next query. Two compounding gaps made this failure mode both likely
+and invisible: (a) `backend/src/server/tools/api_client.py`'s HTTP client
+had only a 3-second connect timeout and 5-second read/write timeout —
+comfortably shorter than an observed real cold-start delay, so the voice
+agent's request would abort before Neon finished resuming; (b) neither
+`DATABASE_URL` nor `DIRECT_URL` had a `connect_timeout` set, so Prisma used
+its own short default rather than tolerating a cold start; (c)
+`errorHandler.ts` logged unhandled errors via a bare `console.error(err)`
+with no request method/path, making any failure that did occur nearly
+impossible to correlate to which write failed once more than one request
+was in flight. Fixed: raised `api_client.py`'s timeouts to
+`connect=5.0, read=15.0, write=15.0`; added `connect_timeout=15` to both
+`DATABASE_URL`/`DIRECT_URL` in `backend/api/.env` and documented the same
+in `.env.example` with an explanation of why; `errorHandler.ts` now logs
+`` `Unhandled error on ${method} ${originalUrl}:` `` so a future failure is
+immediately traceable to its triggering request. **Not a guess dressed up
+as a fix** — the 3-second-vs-5-second gap and the 3146ms observed cold
+request are concrete, correlated evidence, not speculation.
+
+**Verified this session:** `prompts.py` changes — `ruff`/`pyright` clean,
+all 13 Python tests pass (no test asserts on exact prompt wording, so
+none needed updating). `backend/api` — `tsc --noEmit`/`eslint` clean (only
+pre-existing warnings), all 53 vitest tests pass. Live verification: server
+restarted with the new connection string and timeouts, `prisma migrate
+status` confirmed connectivity, a real `POST /api/leads` succeeded end to
+end (test record created and cleaned up afterward). **Not verified live**:
+an actual voice call confirming the model no longer self-identifies as an
+AI or narrates tool calls in practice — that needs a live Deepgram/Groq/
+ElevenLabs session the user can exercise; this is stated rather than
+claimed as tested.

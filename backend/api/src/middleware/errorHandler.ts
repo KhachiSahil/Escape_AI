@@ -7,7 +7,7 @@ export class HttpError extends Error {
   }
 }
 
-export function errorHandler(err: unknown, _req: Request, res: Response, _next: NextFunction) {
+export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction) {
   if (err instanceof ZodError) {
     return res.status(400).json({ error: "Validation failed", details: err.flatten() });
   }
@@ -15,7 +15,11 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
     return res.status(err.status).json({ error: err.message });
   }
 
+  // Unexpected errors (e.g. Prisma connection/query failures) are logged
+  // with the request that triggered them - a bare console.error(err) with
+  // no method/path context is nearly impossible to correlate back to which
+  // write actually failed once more than one request is in flight.
   // eslint-disable-next-line no-console
-  console.error(err);
+  console.error(`Unhandled error on ${req.method} ${req.originalUrl}:`, err);
   return res.status(500).json({ error: "Internal server error" });
 }

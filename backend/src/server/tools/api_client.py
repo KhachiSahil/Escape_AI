@@ -27,7 +27,12 @@ def get_client() -> httpx.AsyncClient:
     global _client
     if _client is None:
         _client = httpx.AsyncClient(
-            timeout=httpx.Timeout(connect=3.0, read=5.0, write=5.0, pool=5.0),
+            # Read/write generous enough to survive a cold Neon compute
+            # resuming from auto-suspend on the CRM API's first query after
+            # idle (observed to take several seconds) - a tight timeout here
+            # surfaces as a silent, hard-to-diagnose "write failed" with no
+            # indication the database was merely waking up.
+            timeout=httpx.Timeout(connect=5.0, read=15.0, write=15.0, pool=5.0),
             limits=httpx.Limits(max_keepalive_connections=10, max_connections=20),
         )
     return _client
