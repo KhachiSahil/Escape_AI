@@ -2,6 +2,7 @@ import { Prisma, Role } from "@prisma/client";
 
 import { prisma } from "../db";
 import { HttpError } from "../middleware/errorHandler";
+import { sendEmail } from "./notificationService";
 import { ADMIN_ROOM, employeeRoom, getIO } from "../realtime/socket";
 import { computeCompositeScore, SCORE_WEIGHTS, type ScorableLead } from "./scoringService";
 
@@ -89,6 +90,12 @@ export async function updateLead(
     payload = { ...payload, compositeScore: computeCompositeScore(merged) };
   }
 
+  const isReassigning = "assignedEmployeeId" in payload;
+  const previousAssignee = isReassigning
+    ? (await prisma.lead.findUnique({ where: { id }, select: { assignedEmployeeId: true } }))
+        ?.assignedEmployeeId
+    : undefined;
+
   let updated;
   try {
     updated = await prisma.lead.update({ where: { id }, data: payload });
@@ -105,7 +112,24 @@ export async function updateLead(
     io.to(employeeRoom(updated.assignedEmployeeId)).emit("lead:updated", updated);
   }
 
+  if (isReassigning && updated.assignedEmployeeId && updated.assignedEmployeeId !== previousAssignee) {
+    notifyReassignment(updated.id, updated.assignedEmployeeId);
+  }
+
   return updated;
+}
+
+function notifyReassignment(leadId: string, assignedEmployeeId: string): void {
+  void prisma.employee
+    .findUnique({ where: { id: assignedEmployeeId }, select: { email: true } })
+    .then((employee) => {
+      if (!employee) return;
+      return sendEmail(
+        employee.email,
+        "A lead has been assigned to you",
+        `Lead ${leadId} has been assigned to you. Please follow up.`,
+      );
+    });
 }
 
 export async function scheduleCallback(id: string, callbackTime: Date, notes?: string) {

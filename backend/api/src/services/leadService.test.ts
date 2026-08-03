@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockFindUnique, mockUpdate, mockTo } = vi.hoisted(() => ({
+const { mockFindUnique, mockUpdate, mockTo, mockEmployeeFindUnique, mockSendEmail } = vi.hoisted(() => ({
   mockFindUnique: vi.fn(),
   mockUpdate: vi.fn(),
   mockTo: vi.fn(() => ({ emit: vi.fn() })),
+  mockEmployeeFindUnique: vi.fn(),
+  mockSendEmail: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../db", () => ({
@@ -12,8 +14,13 @@ vi.mock("../db", () => ({
       findUnique: mockFindUnique,
       update: mockUpdate,
     },
+    employee: {
+      findUnique: mockEmployeeFindUnique,
+    },
   },
 }));
+
+vi.mock("./notificationService", () => ({ sendEmail: mockSendEmail }));
 
 vi.mock("../realtime/socket", () => ({
   getIO: () => ({ to: mockTo }),
@@ -126,5 +133,47 @@ describe("updateLead composite score recomputation", () => {
       where: { id: "lead-1" },
       data: { notes: "just a note" },
     });
+  });
+});
+
+describe("updateLead reassignment email notification", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("emails the newly assigned employee when assignedEmployeeId actually changes", async () => {
+    mockFindUnique.mockResolvedValue({ assignedEmployeeId: "old-emp" });
+    mockUpdate.mockResolvedValue({ id: "lead-1", assignedEmployeeId: "new-emp" });
+    mockEmployeeFindUnique.mockResolvedValue({ email: "new-emp@example.com" });
+
+    await updateLead("lead-1", { assignedEmployeeId: "new-emp" }, { id: "admin-1", role: "ADMIN" });
+
+    // Wait a tick for the fire-and-forget notification promise to resolve.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mockSendEmail).toHaveBeenCalledWith(
+      "new-emp@example.com",
+      expect.stringContaining("assigned"),
+      expect.stringContaining("lead-1"),
+    );
+  });
+
+  it("does not email when assignedEmployeeId is set to the same value it already was", async () => {
+    mockFindUnique.mockResolvedValue({ assignedEmployeeId: "emp-1" });
+    mockUpdate.mockResolvedValue({ id: "lead-1", assignedEmployeeId: "emp-1" });
+
+    await updateLead("lead-1", { assignedEmployeeId: "emp-1" }, { id: "admin-1", role: "ADMIN" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+
+  it("does not email when assignedEmployeeId is not part of the update payload", async () => {
+    mockUpdate.mockResolvedValue({ id: "lead-1", assignedEmployeeId: "emp-1" });
+
+    await updateLead("lead-1", { notes: "unrelated" }, { id: "admin-1", role: "ADMIN" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mockSendEmail).not.toHaveBeenCalled();
   });
 });

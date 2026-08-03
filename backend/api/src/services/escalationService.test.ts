@@ -1,17 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockQueryRaw, mockEmployeeUpdate, mockEscalationCreate, mockLeadUpdate, mockEscalationFindMany, mockTo } =
-  vi.hoisted(() => {
-    const mockEmit = vi.fn();
-    return {
-      mockQueryRaw: vi.fn(),
-      mockEmployeeUpdate: vi.fn(),
-      mockEscalationCreate: vi.fn(),
-      mockLeadUpdate: vi.fn(),
-      mockEscalationFindMany: vi.fn(),
-      mockTo: vi.fn(() => ({ emit: mockEmit })),
-    };
-  });
+const {
+  mockQueryRaw,
+  mockEmployeeUpdate,
+  mockEscalationCreate,
+  mockLeadUpdate,
+  mockEscalationFindMany,
+  mockTo,
+  mockSendEmail,
+} = vi.hoisted(() => {
+  const mockEmit = vi.fn();
+  return {
+    mockQueryRaw: vi.fn(),
+    mockEmployeeUpdate: vi.fn(),
+    mockEscalationCreate: vi.fn(),
+    mockLeadUpdate: vi.fn(),
+    mockEscalationFindMany: vi.fn(),
+    mockTo: vi.fn(() => ({ emit: mockEmit })),
+    mockSendEmail: vi.fn().mockResolvedValue(undefined),
+  };
+});
 
 vi.mock("../db", () => ({
   prisma: {
@@ -33,6 +41,12 @@ vi.mock("../realtime/socket", () => ({
   ADMIN_ROOM: "role:admin",
 }));
 
+vi.mock("./notificationService", () => ({ sendEmail: mockSendEmail }));
+
+vi.mock("../config", () => ({
+  config: { adminNotificationEmail: "admin@example.com" },
+}));
+
 import { createEscalation, listEscalations } from "./escalationService";
 
 describe("createEscalation", () => {
@@ -41,9 +55,9 @@ describe("createEscalation", () => {
   });
 
   it("assigns to the employee returned by the round-robin query and emits to both rooms", async () => {
-    const employee = { id: "emp-1", name: "Employee One" };
+    const employee = { id: "emp-1", name: "Employee One", email: "emp1@example.com" };
     mockQueryRaw.mockResolvedValue([employee]);
-    mockEscalationCreate.mockResolvedValue({ id: "esc-1", status: "assigned" });
+    mockEscalationCreate.mockResolvedValue({ id: "esc-1", status: "assigned", reason: "refund_dispute" });
 
     const result = await createEscalation({ leadId: "lead-1", reason: "refund_dispute" });
 
@@ -61,11 +75,16 @@ describe("createEscalation", () => {
     expect(mockTo).toHaveBeenCalledWith("role:admin");
     expect(mockTo).toHaveBeenCalledWith("employee:emp-1");
     expect(result.assignedEmployee).toEqual(employee);
+    expect(mockSendEmail).toHaveBeenCalledWith(
+      "emp1@example.com",
+      expect.stringContaining("assigned"),
+      expect.stringContaining("esc-1"),
+    );
   });
 
-  it("queues the escalation when no eligible employee is returned", async () => {
+  it("queues the escalation when no eligible employee is returned, and emails the admin fallback", async () => {
     mockQueryRaw.mockResolvedValue([]);
-    mockEscalationCreate.mockResolvedValue({ id: "esc-2", status: "queued" });
+    mockEscalationCreate.mockResolvedValue({ id: "esc-2", status: "queued", reason: "complaint" });
 
     const result = await createEscalation({ leadId: "lead-2", reason: "complaint" });
 
@@ -77,6 +96,11 @@ describe("createEscalation", () => {
     expect(mockTo).toHaveBeenCalledWith("role:admin");
     expect(mockTo).not.toHaveBeenCalledWith(expect.stringMatching(/^employee:/));
     expect(result.assignedEmployee).toBeNull();
+    expect(mockSendEmail).toHaveBeenCalledWith(
+      "admin@example.com",
+      expect.stringContaining("queued"),
+      expect.stringContaining("esc-2"),
+    );
   });
 
   it("passes explicit maxWait/timeout options to $transaction", async () => {

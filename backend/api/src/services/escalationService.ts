@@ -1,7 +1,9 @@
 import { Employee, Prisma } from "@prisma/client";
 
+import { config } from "../config";
 import { prisma } from "../db";
 import { ADMIN_ROOM, employeeRoom, getIO } from "../realtime/socket";
+import { sendEmail } from "./notificationService";
 
 type Tx = Prisma.TransactionClient;
 
@@ -95,5 +97,26 @@ export async function createEscalation(input: { leadId: string; reason: string; 
     io.to(employeeRoom(result.assignedEmployee.id)).emit("escalation:created", result.escalation);
   }
 
+  notifyEscalation(result.escalation, result.assignedEmployee);
+
   return result;
+}
+
+function notifyEscalation(
+  escalation: { id: string; reason: string },
+  assignedEmployee: Employee | null,
+): void {
+  if (assignedEmployee) {
+    void sendEmail(
+      assignedEmployee.email,
+      "New escalation assigned to you",
+      `You've been assigned escalation ${escalation.id} (reason: ${escalation.reason}). Please follow up.`,
+    );
+  } else if (config.adminNotificationEmail) {
+    void sendEmail(
+      config.adminNotificationEmail,
+      "Escalation queued - no employee available",
+      `Escalation ${escalation.id} (reason: ${escalation.reason}) is queued with no ACTIVE sales employee available.`,
+    );
+  }
 }
