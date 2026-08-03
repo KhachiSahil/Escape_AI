@@ -19,6 +19,12 @@ export function AdminEmployeesPage() {
     queryFn: () => api.get<EmployeePerformance[]>('/api/analytics/employee-performance'),
   })
 
+  const onlineQuery = useQuery({
+    queryKey: ['employees', 'online'],
+    queryFn: () => api.get<string[]>('/api/employees/online'),
+  })
+  const onlineIds = new Set(onlineQuery.data ?? [])
+
   const statusMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: EmployeeStatus }) =>
       api.patch<Employee>(`/api/employees/${id}/status`, { status }),
@@ -57,7 +63,15 @@ export function AdminEmployeesPage() {
               const perf = performanceById.get(employee.id)
               return (
                 <tr key={employee.id} className="border-b border-gray-100">
-                  <td className="p-3">{employee.name}</td>
+                  <td className="p-3">
+                    <span
+                      className={`mr-2 inline-block h-2 w-2 rounded-full ${
+                        onlineIds.has(employee.id) ? 'bg-green-500' : 'bg-gray-300'
+                      }`}
+                      title={onlineIds.has(employee.id) ? 'Online' : 'Offline'}
+                    />
+                    {employee.name}
+                  </td>
                   <td className="p-3">{employee.email}</td>
                   <td className="p-3">{employee.role}</td>
                   <td className="p-3">{employee.status}</td>

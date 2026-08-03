@@ -30,15 +30,22 @@ export function useRealtimeSync(): void {
     const onCallLogged = (call: { leadId: string }) => {
       queryClient.invalidateQueries({ queryKey: ['lead', call.leadId] })
     }
+    const onPresenceChange = () => {
+      queryClient.invalidateQueries({ queryKey: ['employees', 'online'] })
+    }
 
     socket.on('lead:updated', onLeadUpdated)
     socket.on('escalation:created', onEscalationCreated)
     socket.on('call:logged', onCallLogged)
+    socket.on('presence:online', onPresenceChange)
+    socket.on('presence:offline', onPresenceChange)
 
     return () => {
       socket.off('lead:updated', onLeadUpdated)
       socket.off('escalation:created', onEscalationCreated)
       socket.off('call:logged', onCallLogged)
+      socket.off('presence:online', onPresenceChange)
+      socket.off('presence:offline', onPresenceChange)
       disconnectSocket()
     }
   }, [employee, queryClient])

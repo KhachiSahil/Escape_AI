@@ -3,9 +3,19 @@ import { Router } from "express";
 import { prisma } from "../db";
 import { requireAuth } from "../middleware/auth";
 import { humanRouteLimiter } from "../middleware/rateLimit";
+import { getOnlineEmployeeIds } from "../realtime/socket";
 import { updateEmployeeStatusSchema } from "../validation/schemas";
 
 export const employeesRouter = Router();
+
+employeesRouter.get(
+  "/online",
+  humanRouteLimiter,
+  requireAuth("ADMIN", "MANAGER"),
+  (_req, res) => {
+    res.json(getOnlineEmployeeIds());
+  },
+);
 
 employeesRouter.get("/", humanRouteLimiter, requireAuth("ADMIN", "MANAGER"), async (_req, res, next) => {
   try {
