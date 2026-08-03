@@ -72,6 +72,21 @@ export const createCallSchema = z.object({
   recommendedAction: longText().optional(),
 });
 
+export const listCallsQuerySchema = z.object({
+  leadId: z.string().cuid().optional(),
+  handledByEmployeeId: z.string().cuid().optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+});
+
+export const listLeadsQuerySchema = z.object({
+  status: shortText().optional(),
+  assignedEmployeeId: z.string().cuid().optional(),
+  search: shortText().optional(),
+  followUpFrom: z.coerce.date().optional(),
+  followUpTo: z.coerce.date().optional(),
+});
+
 export const createEscalationSchema = z.object({
   leadId: z.string().cuid(),
   reason: shortText().min(1),

@@ -8,6 +8,11 @@ import { ErrorState } from '../components/ErrorState'
 import { StatusBadge, ScoreBadge } from '../components/LeadStatusBadge'
 import type { LeadDetail, LeadStatus, UpdateLeadInput } from '../types/models'
 
+interface LogCallInput {
+  shortSummary: string
+  durationSeconds?: number
+}
+
 const STATUS_OPTIONS: LeadStatus[] = [
   'NEW',
   'QUALIFIED',
@@ -45,12 +50,48 @@ export function LeadDetailPage() {
     },
   })
 
+  const [callSummary, setCallSummary] = useState('')
+  const [callDuration, setCallDuration] = useState('')
+  const [callFormError, setCallFormError] = useState<string | null>(null)
+
+  const logCallMutation = useMutation({
+    mutationFn: (input: LogCallInput) =>
+      api.post('/api/calls', {
+        leadId: id,
+        callType: 'HUMAN',
+        handledByEmployeeId: employee?.id,
+        shortSummary: input.shortSummary,
+        durationSeconds: input.durationSeconds,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lead', id] })
+      setCallSummary('')
+      setCallDuration('')
+      setCallFormError(null)
+    },
+    onError: (err) => {
+      setCallFormError(err instanceof ApiError ? err.body.error : 'Could not log call')
+    },
+  })
+
   function handleSubmit(event: FormEvent) {
     event.preventDefault()
     const input: UpdateLeadInput = {}
     if (status) input.status = status
     if (notes) input.notes = notes
     mutation.mutate(input)
+  }
+
+  function handleLogCall(event: FormEvent) {
+    event.preventDefault()
+    if (!callSummary.trim()) {
+      setCallFormError('Summary is required')
+      return
+    }
+    logCallMutation.mutate({
+      shortSummary: callSummary,
+      durationSeconds: callDuration ? Number(callDuration) : undefined,
+    })
   }
 
   if (query.isLoading) return <LoadingState label="Loading lead…" />
@@ -171,9 +212,53 @@ export function LeadDetailPage() {
                 <li key={call.id} className="rounded border border-gray-100 p-2">
                   <span className="font-medium">{call.callType}</span> —{' '}
                   {call.shortSummary ?? 'No summary'}
+                  {call.recordingUrl && (
+                    <audio controls src={call.recordingUrl} className="mt-2 w-full">
+                      Your browser does not support audio playback.
+                    </audio>
+                  )}
                 </li>
               ))}
             </ul>
+          )}
+
+          {canEdit && (
+            <form onSubmit={handleLogCall} className="mt-4 space-y-3 border-t border-gray-100 pt-4">
+              <h3 className="text-xs font-medium text-gray-500">Log a call you handled</h3>
+              <div>
+                <label htmlFor="callSummary" className="block text-xs font-medium text-gray-500">
+                  Summary
+                </label>
+                <textarea
+                  id="callSummary"
+                  value={callSummary}
+                  onChange={(e) => setCallSummary(e.target.value)}
+                  rows={2}
+                  className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm"
+                />
+              </div>
+              <div>
+                <label htmlFor="callDuration" className="block text-xs font-medium text-gray-500">
+                  Duration (seconds, optional)
+                </label>
+                <input
+                  id="callDuration"
+                  type="number"
+                  min={0}
+                  value={callDuration}
+                  onChange={(e) => setCallDuration(e.target.value)}
+                  className="mt-1 w-32 rounded border border-gray-300 px-2 py-1 text-sm"
+                />
+              </div>
+              {callFormError && <p className="text-sm text-red-600">{callFormError}</p>}
+              <button
+                type="submit"
+                disabled={logCallMutation.isPending}
+                className="rounded bg-gray-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-900 disabled:opacity-50"
+              >
+                {logCallMutation.isPending ? 'Logging…' : 'Log call'}
+              </button>
+            </form>
           )}
         </div>
 
