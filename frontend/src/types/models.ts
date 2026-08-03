@@ -79,6 +79,10 @@ export interface Call {
   createdAt: string
 }
 
+export interface CallWithLead extends Call {
+  lead: Pick<Lead, 'name' | 'phone'>
+}
+
 export interface Escalation {
   id: string
   leadId: string

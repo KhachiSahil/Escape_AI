@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { LoginPage } from './pages/LoginPage'
 import { LeadsListPage } from './pages/LeadsListPage'
 import { LeadDetailPage } from './pages/LeadDetailPage'
+import { CallsPage } from './pages/CallsPage'
 import { AdminEmployeesPage } from './pages/admin/AdminEmployeesPage'
 import { AdminAnalyticsPage } from './pages/admin/AdminAnalyticsPage'
 import { AdminEscalationsPage } from './pages/admin/AdminEscalationsPage'
@@ -23,6 +24,7 @@ function App() {
       >
         <Route path="/leads" element={<LeadsListPage />} />
         <Route path="/leads/:id" element={<LeadDetailPage />} />
+        <Route path="/calls" element={<CallsPage />} />
         <Route
           path="/admin/employees"
           element={

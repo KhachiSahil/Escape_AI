@@ -5,6 +5,7 @@ import { humanRouteLimiter } from "../middleware/rateLimit";
 import * as leadService from "../services/leadService";
 import {
   createLeadSchema,
+  listLeadsQuerySchema,
   scheduleCallbackSchema,
   updateLeadSchema,
 } from "../validation/schemas";
@@ -23,10 +24,13 @@ leadsRouter.post("/", requireServiceKey, async (req, res, next) => {
 
 leadsRouter.get("/", humanRouteLimiter, requireAuth(), async (req, res, next) => {
   try {
-    const { status, assignedEmployeeId } = req.query;
+    const query = listLeadsQuerySchema.parse(req.query);
     const leads = await leadService.listLeads({
-      status: typeof status === "string" ? status : undefined,
-      assignedEmployeeId: typeof assignedEmployeeId === "string" ? assignedEmployeeId : undefined,
+      status: query.status,
+      assignedEmployeeId: query.assignedEmployeeId,
+      search: query.search,
+      followUpFrom: query.followUpFrom,
+      followUpTo: query.followUpTo,
     });
     res.json(leads);
   } catch (err) {

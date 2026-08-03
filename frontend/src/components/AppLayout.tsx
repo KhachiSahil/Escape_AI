@@ -23,6 +23,9 @@ export function AppLayout() {
               <NavLink to="/leads" className={navLinkClass}>
                 Leads
               </NavLink>
+              <NavLink to="/calls" className={navLinkClass}>
+                Calls
+              </NavLink>
               {isAdmin && (
                 <>
                   <NavLink to="/admin/employees" className={navLinkClass}>

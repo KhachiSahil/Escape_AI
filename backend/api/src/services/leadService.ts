@@ -29,11 +29,29 @@ export async function getLead(id: string) {
   return lead;
 }
 
-export function listLeads(filters: { status?: string; assignedEmployeeId?: string }) {
+export function listLeads(filters: {
+  status?: string;
+  assignedEmployeeId?: string;
+  search?: string;
+  followUpFrom?: Date;
+  followUpTo?: Date;
+}) {
+  const nextFollowUp: Prisma.DateTimeFilter = {};
+  if (filters.followUpFrom) nextFollowUp.gte = filters.followUpFrom;
+  if (filters.followUpTo) nextFollowUp.lt = filters.followUpTo;
+
   return prisma.lead.findMany({
     where: {
       status: filters.status as never,
       assignedEmployeeId: filters.assignedEmployeeId,
+      nextFollowUp: filters.followUpFrom || filters.followUpTo ? nextFollowUp : undefined,
+      OR: filters.search
+        ? [
+            { name: { contains: filters.search, mode: "insensitive" } },
+            { phone: { contains: filters.search, mode: "insensitive" } },
+            { email: { contains: filters.search, mode: "insensitive" } },
+          ]
+        : undefined,
     },
     orderBy: { createdAt: "desc" },
   });

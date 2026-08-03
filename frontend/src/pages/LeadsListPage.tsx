@@ -23,6 +23,7 @@ export function LeadsListPage() {
   const isEmployeeOnly = employee?.role === 'SALES_EMPLOYEE'
   const [scoreFilter, setScoreFilter] = useState<LeadScore | ''>('')
   const [sortBy, setSortBy] = useState<'' | 'leadScore' | 'compositeScore'>('')
+  const [followUpOnly, setFollowUpOnly] = useState(false)
 
   const query = useQuery({
     queryKey: ['leads', isEmployeeOnly ? employee?.id : 'all'],
@@ -38,6 +39,9 @@ export function LeadsListPage() {
     if (scoreFilter) {
       result = result.filter((lead) => lead.leadScore === scoreFilter)
     }
+    if (followUpOnly) {
+      result = result.filter((lead) => lead.nextFollowUp != null)
+    }
     if (sortBy === 'leadScore') {
       result = [...result].sort((a, b) => {
         const rankA = a.leadScore ? SCORE_RANK[a.leadScore] : 99
@@ -48,7 +52,7 @@ export function LeadsListPage() {
       result = [...result].sort((a, b) => (b.compositeScore ?? -1) - (a.compositeScore ?? -1))
     }
     return result
-  }, [query.data, scoreFilter, sortBy])
+  }, [query.data, scoreFilter, sortBy, followUpOnly])
 
   return (
     <div className="mx-auto max-w-5xl p-6">
@@ -69,6 +73,14 @@ export function LeadsListPage() {
               </option>
             ))}
           </select>
+          <label className="flex items-center gap-1.5 text-sm text-gray-600">
+            <input
+              type="checkbox"
+              checked={followUpOnly}
+              onChange={(e) => setFollowUpOnly(e.target.checked)}
+            />
+            Has upcoming follow-up
+          </label>
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
