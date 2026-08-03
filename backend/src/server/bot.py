@@ -12,13 +12,19 @@ from pipecat.processors.frameworks.rtvi import (
     RTVIFunctionCallReportLevel,
     RTVIObserverParams,
 )
-from pipecat.runner.types import RunnerArguments, SmallWebRTCRunnerArguments
+from pipecat.runner.types import (
+    RunnerArguments,
+    SmallWebRTCRunnerArguments,
+    WebSocketRunnerArguments,
+)
+from pipecat.runner.utils import create_transport
 from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
 from pipecat.services.groq.llm import GroqLLMService
 from pipecat.transports.base_transport import BaseTransport, TransportParams
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
 from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
+from pipecat.transports.websocket.fastapi import FastAPIWebsocketParams
 from pipecat.workers.runner import WorkerRunner
 
 import config
@@ -112,10 +118,25 @@ async def run_bot(transport: BaseTransport):
         await api_client.aclose_client()
 
 
+# Telephony transport params (Twilio Media Streams). Twilio, Telnyx, Plivo,
+# and Exotel all arrive as WebSocketRunnerArguments - create_transport()
+# auto-detects the provider from the first WS message and picks the right
+# entry here; add_wav_header/serializer are wired up automatically for the
+# detected provider.
+TRANSPORT_PARAMS = {
+    "webrtc": lambda: TransportParams(
+        audio_in_enabled=True,
+        audio_out_enabled=True,
+    ),
+    "twilio": lambda: FastAPIWebsocketParams(
+        audio_in_enabled=True,
+        audio_out_enabled=True,
+    ),
+}
+
+
 async def bot(runner_args: RunnerArguments):
     """Main bot entry point."""
-
-    transport = None
 
     match runner_args:
         case SmallWebRTCRunnerArguments():
@@ -128,6 +149,12 @@ async def bot(runner_args: RunnerArguments):
                     audio_out_enabled=True,
                 ),
             )
+        case WebSocketRunnerArguments():
+            # Covers both inbound and outbound-originated Twilio calls -
+            # once Twilio opens the Media Streams WebSocket, the two are
+            # indistinguishable at this layer. See
+            # tools/outbound.py/trigger_outbound_call.py for call origination.
+            transport = await create_transport(runner_args, TRANSPORT_PARAMS)
         case _:
             logger.error(f"Unsupported runner arguments type: {type(runner_args)}")
             return
