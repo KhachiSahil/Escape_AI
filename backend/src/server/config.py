@@ -18,6 +18,10 @@ DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 # climbed from 0.6s to 10s+ within 8 consecutive requests on the 8b model.
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+# Caps every response to a short, natural spoken reply instead of a long
+# multi-question ramble - also directly cuts per-turn token usage, which
+# matters given Groq's daily token quota (see bot.py's LLM construction).
+GROQ_MAX_TOKENS = int(os.getenv("GROQ_MAX_TOKENS", "120"))
 
 # ElevenLabs (TTS)
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")

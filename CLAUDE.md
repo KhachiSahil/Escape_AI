@@ -1152,3 +1152,48 @@ key. **Not verified live**: an actual voice call exercising the retry/
 fallback path end-to-end (needs real mic/speaker I/O this environment
 doesn't have, and the failure is probabilistic/rate-quota-dependent to
 reproduce on demand).
+
+### 2026-08-04 — Response brevity/token cap + single dev-launch command
+
+**Context:** User reported the agent asking bulky, multi-part questions in
+one turn and wanted lower per-turn token usage (directly relevant after
+this session's earlier Groq daily-quota exhaustion), plus a single command
+to run all three services instead of three separate terminals.
+
+**1. Hard response-length cap (`config.py`/`bot.py`):** new `GROQ_MAX_TOKENS`
+env var (default 120), passed via `GroqLLMService(params=GroqLLMService.
+InputParams(max_tokens=...))`. Previously nothing capped response length -
+the model could ramble as long as it wanted, which is both a UX problem
+(sounds unnatural on a call) and the largest lever on per-turn token cost.
+
+**2. Prompt changes to stop stacked/checklist-style questions
+(`prompts.py`):** added an explicit "ask only ONE thing at a time - never
+stack multiple questions in one turn" rule next to the existing brevity
+instruction, and rewrote the "Lead qualification" section - it previously
+listed 9 fields ("name, phone, email, profession, experience level, course
+interested, budget, goals, timeline, pain points") in one sentence, which
+reads to the model as a checklist to run through. Now: only name/phone/
+course are actively gathered (one at a time), everything else only if the
+caller offers it unprompted - matching what "don't ask unnecessary
+questions" actually requires, not just a wording tweak.
+
+**3. Single dev-launch command (new root `package.json`):** `npm run dev`
+runs `backend/api`, `frontend`, and the Python agent together via
+`concurrently`, labeled/color-coded in one terminal. The agent script
+(`npm run agent`) wraps `uv run --project backend/src/server python
+backend/src/server/bot.py` in `cross-env PYTHONIOENCODING=utf-8
+PYTHONUTF8=1` - without this, pipecat's startup banner's emoji crashes on
+Windows' default console encoding (a known issue from an earlier session,
+now fixed at the launch-command level instead of needing to be remembered
+per-terminal). Added root `.gitignore` (Node found no pre-existing one)
+and a "Running locally" section to README.md.
+
+**Verified this session:** `ruff`/`pytest` clean in `backend/src/server`
+(25/25 tests, no new failures). Live-verified the launch command itself -
+ran `npm run dev` for real, confirmed all three services actually bind and
+respond (agent :7860 → 307, frontend :5173 → 200, api :4000/health → 200),
+then shut them down cleanly. **Not verified live**: the actual subjective
+effect of the token cap/one-question-at-a-time prompt change on a real
+voice call - that needs a live session the user can judge, and this
+session's Groq quota was still exhausted from earlier testing so no live
+LLM call was attempted here.

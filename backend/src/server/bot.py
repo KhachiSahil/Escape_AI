@@ -52,10 +52,13 @@ async def run_bot(transport: BaseTransport):
         voice_id=config.ELEVENLABS_VOICE_ID,
     )
 
-    # LLM service
+    # LLM service. max_tokens caps every response to a short, natural
+    # spoken reply instead of a long multi-question ramble - also directly
+    # reduces per-turn token usage against Groq's daily quota.
     llm = GroqLLMService(
         api_key=config.GROQ_API_KEY,
         model=config.GROQ_MODEL,
+        params=GroqLLMService.InputParams(max_tokens=config.GROQ_MAX_TOKENS),
     )
     register_all_tools(llm)
 

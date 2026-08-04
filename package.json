@@ -1,0 +1,14 @@
+{
+  "name": "escape-ai",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Runs backend/api, frontend, and the Python voice agent together for local development.",
+  "scripts": {
+    "dev": "concurrently -n api,frontend,agent -c blue,green,magenta \"npm run dev --prefix backend/api\" \"npm run dev --prefix frontend\" \"npm run agent\"",
+    "agent": "cross-env PYTHONIOENCODING=utf-8 PYTHONUTF8=1 uv run --project backend/src/server python backend/src/server/bot.py"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "cross-env": "^7.0.3"
+  }
+}
