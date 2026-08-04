@@ -126,27 +126,32 @@ async def test_update_lead_missing_lead_id():
 
 
 @pytest.mark.asyncio
-async def test_schedule_callback_success():
+async def test_schedule_callback_is_fire_and_forget():
+    """schedule_callback must respond immediately (optimistic status) rather
+    than waiting on the CRM API call - the caller's confirmation doesn't
+    depend on the write actually completing first."""
     params = FakeParams({"leadId": "lead-1", "callbackTime": "2026-01-01T10:00:00Z", "notes": "call back"})
-    with patch("tools.leads.request", new=AsyncMock(return_value={})) as mock_request:
+    request_mock = AsyncMock(return_value={})
+    with patch("tools.leads.request", new=request_mock):
         await leads.schedule_callback(params.as_params())
 
-    mock_request.assert_awaited_once_with(
+    params.result_callback.assert_awaited_once_with({"status": "scheduled"})
+    # Give the background task a chance to run before asserting on it.
+    import asyncio
+
+    await asyncio.sleep(0)
+    request_mock.assert_awaited_once_with(
         "POST",
         "/api/leads/lead-1/callback",
         json={"callbackTime": "2026-01-01T10:00:00Z", "notes": "call back"},
     )
-    params.result_callback.assert_awaited_once_with({"status": "scheduled"})
 
 
 @pytest.mark.asyncio
-async def test_schedule_callback_handles_api_error():
-    params = FakeParams({"leadId": "lead-1", "callbackTime": "2026-01-01T10:00:00Z"})
-    with patch("tools.leads.request", new=AsyncMock(side_effect=CrmApiError("boom"))):
-        await leads.schedule_callback(params.as_params())
-
-    params.result_callback.assert_awaited_once()
-    assert params.result_callback.call_args[0][0]["status"] == "error"
+async def test_schedule_callback_missing_lead_id():
+    params = FakeParams({"callbackTime": "2026-01-01T10:00:00Z"})
+    await leads.schedule_callback(params.as_params())
+    params.result_callback.assert_awaited_once_with({"status": "error", "message": "Missing leadId"})
 
 
 @pytest.mark.asyncio

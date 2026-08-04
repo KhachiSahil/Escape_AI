@@ -273,17 +273,25 @@ async def update_lead(params: FunctionCallParams) -> None:
 
 
 async def schedule_callback(params: FunctionCallParams) -> None:
+    """Fire-and-forget: the confirmation the caller hears ("I've scheduled
+    that") doesn't depend on the CRM write actually completing first, so the
+    write happens in the background instead of blocking the current turn on
+    a CRM API round-trip.
+    """
     args = params.arguments
     lead_id = args.get("leadId")
-    try:
-        await request(
+    if not lead_id:
+        await params.result_callback({"status": "error", "message": "Missing leadId"})
+        return
+    await params.result_callback({"status": "scheduled"})
+    _fire_and_forget(
+        request(
             "POST",
             f"/api/leads/{lead_id}/callback",
             json={"callbackTime": args.get("callbackTime"), "notes": args.get("notes")},
-        )
-        await params.result_callback({"status": "scheduled"})
-    except CrmApiError:
-        await params.result_callback({"status": "error", "message": "Could not schedule callback."})
+        ),
+        description=f"schedule_callback {lead_id}",
+    )
 
 
 async def request_human_escalation(params: FunctionCallParams) -> None:

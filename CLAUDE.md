@@ -960,3 +960,78 @@ Tailwind color utility (zero found) and by re-reading every restyled file
 for token-consistency, not by looking at a rendered screenshot. The user
 should give it a visual pass in their own browser (including toggling dark
 mode and checking the mobile nav) before considering this fully done.
+
+### 2026-08-04 — Voice agent latency fixes: turn detection, model, tool calls, prompt size
+
+**Context:** User reported the voice agent responds very late, breaking the
+feel of a natural conversation. Root-caused via read-only investigation
+(installed pipecat 1.3.0 source, bot.py's actual pipeline config) rather
+than guessing, then confirmed four fix directions with the user before
+touching code, since some involve real trade-offs (turn-detection
+sensitivity vs. speed, model quality vs. speed).
+
+**1. Turn-detection stack — the largest contributor.** `bot.py` never
+configured `LLMUserAggregatorParams.user_turn_strategies`, so pipecat 1.3.0
+silently applied its new default: `TurnAnalyzerUserTurnStopStrategy` running
+a prosody-aware ML model (`LocalSmartTurnAnalyzerV3`) with a **3-second**
+internal silence fallback, stacked under a separate **5-second**
+`user_turn_stop_timeout` ceiling, plus an STT-finalization wait on top —
+meaning after the caller stopped talking, the system could sit on several
+seconds of dead air before even starting to process the turn, independent
+of STT/LLM/TTS speed. Per user decision, replaced with pipecat's
+`SpeechTimeoutUserTurnStopStrategy` (pure VAD-silence timing,
+`user_speech_timeout=0.6s`) and reduced `user_turn_stop_timeout` to `2.0s`
+as a much tighter ceiling — trades a small risk of cutting in on a caller
+who pauses mid-thought for a much snappier turnaround. `SileroVADAnalyzer`
+also given explicit `VADParams(stop_secs=0.5)` rather than the bare
+zero-arg default.
+
+**2. GROQ_MODEL: `llama-3.3-70b-versatile` → `llama-3.1-8b-instant`.** Per
+user decision, traded some reasoning depth for materially faster Groq
+token generation — meaningful in a live voice call where every extra
+second of "thinking" reads as an unnatural pause. Updated `config.py`'s
+default, `backend/src/server/.env`, and `.env.example`.
+
+**3. Two more tool calls made fire-and-forget, following the existing
+`update_lead` pattern.** Investigation found 4 of 5 LLM-callable tools
+blocked the conversational turn on a live CRM API HTTP round-trip — with
+`api_client.py`'s generous timeouts (`connect=5s, read/write=15s`)
+specifically sized to tolerate Neon cold-start delays (see the 2026-08-03
+entry above), meaning a tool call could stall the conversation for
+multiple real seconds in the worst case. Per user decision:
+`schedule_callback` is now fire-and-forget (its spoken confirmation
+doesn't depend on the write completing first) — same `_fire_and_forget()`
+helper, same "respond optimistically, log failures, never raise into the
+pipeline" contract as `update_lead`. **`create_lead` deliberately stays
+blocking** — its result (`leadId`) is a hard dependency every other tool
+call requires as an argument, so faking an immediate response isn't safe
+without a client-generated-id reconciliation mechanism that doesn't exist
+in this schema; the user explicitly chose to leave it blocking and rely on
+the cold-start timeout fix already in place instead of a larger schema
+change. `request_human_escalation` and `finalize_call_summary` also stay
+blocking (already the case, unchanged) — their results directly change
+what the agent says next.
+
+**4. System prompt trimmed ~41% (8,147 → 4,799 chars, ~2,000 → ~1,200
+tokens) with zero instructions dropped.** `prompts.py`'s system prompt is
+resent in full on every LLM call for the whole conversation, and Groq's
+OpenAI-compatible endpoint has no prompt-caching mechanism — so its size is
+a direct, recurring per-turn latency tax that grows with call length.
+Reworded every section for brevity (tighter phrasing, fewer repeated
+qualifiers) while preserving every rule from prior sessions' hard-won
+fixes: the human-persona instruction, the silent-tool-calling instruction,
+and the prompt-injection resistance section are all still present in full,
+just tighter.
+
+**Verified this session:** `ruff check .` and `pytest` clean in
+`backend/src/server` (13/13 tests pass — updated `test_schedule_callback_*`
+to assert the new fire-and-forget contract, mirroring the existing
+`update_lead` tests, since the old blocking-behavior assertions no longer
+applied). `pyright` shows the same 4 pre-existing errors from prior
+sessions (unrelated `api_key: str | None` typing and one `Mapping[str,
+Any]` argument-type mismatch in `request_human_escalation`) - none
+introduced by this change. `bot.py` and `prompts.py` import and run cleanly
+end-to-end. **Not verified live**: an actual voice call confirming the
+perceived latency improvement - that needs a real Deepgram/Groq/ElevenLabs
+session the user can exercise and judge subjectively; stated rather than
+claimed as tested.

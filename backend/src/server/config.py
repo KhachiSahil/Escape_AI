@@ -9,9 +9,11 @@ load_dotenv(override=True)
 # Deepgram (STT)
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 
-# Groq (LLM)
+# Groq (LLM). llama-3.1-8b-instant trades some reasoning depth for
+# meaningfully faster generation - important for a live voice conversation
+# where every extra second of "thinking" reads as an unnatural pause.
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
 
 # ElevenLabs (TTS)
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")

@@ -1,5 +1,6 @@
 from loguru import logger
 from pipecat.audio.vad.silero import SileroVADAnalyzer
+from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.frames.frames import LLMRunFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.worker import PipelineParams, PipelineWorker
@@ -25,6 +26,8 @@ from pipecat.transports.base_transport import BaseTransport, TransportParams
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
 from pipecat.transports.smallwebrtc.transport import SmallWebRTCTransport
 from pipecat.transports.websocket.fastapi import FastAPIWebsocketParams
+from pipecat.turns.user_stop import SpeechTimeoutUserTurnStopStrategy
+from pipecat.turns.user_turn_strategies import UserTurnStrategies
 from pipecat.workers.runner import WorkerRunner
 
 import config
@@ -58,7 +61,19 @@ async def run_bot(transport: BaseTransport):
     user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
         context,
         user_params=LLMUserAggregatorParams(
-            vad_analyzer=SileroVADAnalyzer(),
+            vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.5)),
+            # Default turn-stop detection uses a prosody-aware ML model with a
+            # 3s silence fallback, stacked under a 5s user_turn_stop_timeout
+            # ceiling - together these can leave several seconds of dead air
+            # before the agent even starts thinking, which reads as "slow" and
+            # breaks the feel of a live conversation. Swapping to a plain
+            # VAD-silence timeout (user speaks, pauses ~0.6s, turn ends) trades
+            # a small risk of cutting in in exchange for a much snappier,
+            # more natural back-and-forth.
+            user_turn_strategies=UserTurnStrategies(
+                stop=[SpeechTimeoutUserTurnStopStrategy(user_speech_timeout=0.6)],
+            ),
+            user_turn_stop_timeout=2.0,
         ),
     )
 
