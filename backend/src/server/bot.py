@@ -1,7 +1,7 @@
 from loguru import logger
 from pipecat.audio.vad.silero import SileroVADAnalyzer
 from pipecat.audio.vad.vad_analyzer import VADParams
-from pipecat.frames.frames import LLMRunFrame
+from pipecat.frames.frames import LLMRunFrame, LLMTextFrame, TTSSpeakFrame
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.worker import PipelineParams, PipelineWorker
 from pipecat.processors.aggregators.llm_context import LLMContext
@@ -35,6 +35,8 @@ import tools.api_client as api_client
 import tools.leads as leads
 from prompts import build_system_prompt
 from tools import register_all_tools, tools_schema
+from tools.completion_retry_policy import CompletionRetryPolicy, RetryAction
+from tools.leaked_tool_call_filter import LeakedToolCallFilter
 
 
 async def run_bot(transport: BaseTransport):
@@ -57,7 +59,12 @@ async def run_bot(transport: BaseTransport):
     )
     register_all_tools(llm)
 
-    context = LLMContext(tools=tools_schema)
+    # tool_choice is set explicitly (rather than left as pipecat's implicit
+    # NOT_GIVEN default) as one mitigation for a documented Groq/Llama
+    # tool-calling quirk - see tools/leaked_tool_call_filter.py's module
+    # docstring for the full failure mode this and that filter both guard
+    # against.
+    context = LLMContext(tools=tools_schema, tool_choice="auto")
     user_aggregator, assistant_aggregator = LLMContextAggregatorPair(
         context,
         user_params=LLMUserAggregatorParams(
@@ -77,13 +84,19 @@ async def run_bot(transport: BaseTransport):
         ),
     )
 
-    # Pipeline - assembled from reusable components
+    # Pipeline - assembled from reusable components. leaked_tool_call_filter
+    # sits between llm and tts as a safety net for a documented Groq/Llama
+    # tool-calling quirk where a real tool call occasionally leaks as raw
+    # <function=name>{json}</function> text instead of firing through the
+    # normal structured tool-call path - see tools/leaked_tool_call_filter.py.
+    leaked_tool_call_filter = LeakedToolCallFilter()
     pipeline = Pipeline(
         [
             transport.input(),
             stt,
             user_aggregator,
             llm,
+            leaked_tool_call_filter,
             tts,
             transport.output(),
             assistant_aggregator,
@@ -106,6 +119,33 @@ async def run_bot(transport: BaseTransport):
     async def on_client_ready(rtvi):
         context.add_message({"role": "system", "content": build_system_prompt()})
         await worker.queue_frames([LLMRunFrame()])
+
+    # See tools/completion_retry_policy.py: Groq's tool-call parser
+    # occasionally rejects a completion outright with a "tool_use_failed"
+    # 400 (same underlying quirk as leaked_tool_call_filter.py, just
+    # surfacing as an error response instead of leaked text). Without this
+    # handler that turn produces total silence - pipecat logs the error but
+    # neither retries nor says anything, which reads as the agent hanging.
+    retry_policy = CompletionRetryPolicy()
+    worker.add_reached_downstream_filter((LLMTextFrame,))
+
+    @worker.event_handler("on_frame_reached_downstream")
+    async def on_frame_reached_downstream(worker, frame):
+        retry_policy.on_success()
+
+    @worker.event_handler("on_pipeline_error")
+    async def on_pipeline_error(worker, frame):
+        action = retry_policy.on_error(str(frame.error))
+        if action is RetryAction.RETRY:
+            logger.warning(f"LLM completion failed, retrying once: {frame.error}")
+            await worker.queue_frames([LLMRunFrame()])
+        elif action is RetryAction.FALLBACK:
+            logger.error(
+                f"LLM completion failed again after retry, giving up on this turn: {frame.error}"
+            )
+            await worker.queue_frames(
+                [TTSSpeakFrame("Sorry, could you say that again for me?")]
+            )
 
     @transport.event_handler("on_client_connected")
     async def on_client_connected(transport, client):

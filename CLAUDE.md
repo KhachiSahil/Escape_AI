@@ -1065,3 +1065,90 @@ running `backend/api` + live Neon DB. Two concrete findings:
 the *subjective* feel of the turn-detection change - that needs real
 mic/speaker I/O this environment doesn't have; the user should judge that
 part directly.
+
+### 2026-08-04 — Fix: leaked tool-call tags reaching TTS (Groq/Llama quirk)
+
+**Context:** User showed a real transcript where the agent's spoken output
+included literal text like `<function=create_lead>{"budget": "not
+specified", ...}</function>` - the caller would have heard this read
+aloud. This looked at first like the "function calling must be invisible"
+requirement regressing, but investigation confirmed the existing fixes for
+that (RTVI `function_call_report_level=DISABLED`, the "never narrate tool
+use" prompt instruction) were both still fully intact - this was a
+different, new bug.
+
+**Root cause (confirmed via live API testing, not assumed):** Groq's
+tool-call parser for `llama-3.3-70b-versatile` occasionally fails to
+convert the model's native tool-call output into the structured
+`tool_calls` field, and instead of the request just failing, sometimes lets
+the raw tag leak into `message.content` as literal text - a documented
+Llama-3.x-on-inference-provider quirk (the tag format,
+`<function=name>{json}</function>`, is Llama's own native tool-calling
+template leaking through unparsed). Confirmed pipecat 1.3.0's request-
+building is standards-correct (proper OpenAI-format `tools=[...]`, no
+malformation) - the failure is server-side in Groq's parser, not a bug in
+this codebase's wiring. Live testing also found a **second, related**
+failure mode: sometimes the same underlying parser failure causes Groq to
+reject the request outright with a 400 `tool_use_failed` error instead of
+leaking text - which, unhandled, produced complete silence for that turn
+(pipecat logs the error but never speaks or retries).
+
+**Fix 1 - safety-net filter (`tools/leaked_tool_call_filter.py`, new):** a
+`FrameProcessor` inserted between `llm` and `tts` in `bot.py`'s pipeline.
+Buffers streamed `LLMTextFrame`s just enough to detect a
+`<function=name>{json}</function>` tag spanning many small chunks (real
+streaming delivers a handful of characters per frame - the JSON body can
+be 80+ characters, so a fixed small holdback window isn't enough; the
+processor holds back everything from the first `<function=` marker onward
+until either a matching `</function>` closes it or a 4000-char safety cap
+is hit, rather than risking an unbounded hang on a genuinely truncated
+tag). Strips any match before it reaches TTS and manually dispatches the
+parsed call to the real handler in `tools.HANDLERS` (via a minimal
+`_FakeFunctionCallParams` shim, same pattern the test suite's `FakeParams`
+already uses) - since a leaked tag means the tool call never fired through
+pipecat's normal path, stripping the text without dispatching would
+silently drop the `create_lead`/`update_lead`/etc. side effect entirely.
+
+**Fix 2 - reduce trigger conditions:** set `LLMContext(tools=tools_schema,
+tool_choice="auto")` explicitly in `bot.py` rather than leaving it at
+pipecat's implicit `NOT_GIVEN` default (one of Groq's own documented
+mitigations for this failure class), and trimmed the two most verbose tool
+schemas in `tools/leads.py` (`update_lead`'s description and per-field
+descriptions, `priority`'s description) - same properties and behavior
+guidance, tighter wording. Total tool-schema JSON dropped from ~8.3KB to
+6.3KB. Verbose/many-tool schemas and long resent context are both named as
+contributing conditions for this Llama quirk.
+
+**Fix 3 - retry/fallback for the silent 400 (`tools/completion_retry_policy.py`,
+new; wired into `bot.py`):** a small `CompletionRetryPolicy` class tracks
+consecutive completion failures matching this error signature. On the
+first failure, retries the turn once (the failure is model
+non-determinism, so a retry often succeeds - confirmed live: most calls
+succeed cleanly, only some fail). On a second consecutive failure, gives
+up and speaks a natural fallback line ("Sorry, could you say that again
+for me?") via `TTSSpeakFrame` instead of leaving the caller in silence.
+Wired via `PipelineWorker`'s `on_pipeline_error` event (fires with the
+`ErrorFrame` pipecat's own generic exception handler already produces) and
+`on_frame_reached_downstream` (watching for `LLMTextFrame`, configured via
+`add_reached_downstream_filter`) to reset the counter on any actually-
+successful completion, so an unrelated failure much later isn't miscounted
+as the second half of an earlier retry sequence.
+
+**Verified this session:** all three fixes reproduced and confirmed
+against the *real* failure, not just unit tests - fed the exact transcript
+text (chunked to simulate real token-by-token streaming) through the new
+filter and confirmed clean spoken output plus a correctly-dispatched
+`create_lead` call with the right arguments; live Groq API calls with the
+trimmed schema + explicit `tool_choice` confirmed the request format is
+still valid and tool calls resolve correctly; captured a real
+`tool_use_failed` 400 from a live call and used its exact error shape to
+build the retry policy's detection string. 25 Python tests pass (13
+existing + 7 for the leaked-tag filter + 5 for the retry policy), `ruff`/
+`pyright` clean (same 4 pre-existing, unrelated typing errors as prior
+sessions - none introduced by this change). **Note:** this session's live
+testing exhausted this Groq API key's daily token quota (100,000 TPD) -
+further live verification needs to wait for quota reset or a different
+key. **Not verified live**: an actual voice call exercising the retry/
+fallback path end-to-end (needs real mic/speaker I/O this environment
+doesn't have, and the failure is probabilistic/rate-quota-dependent to
+reproduce on demand).
