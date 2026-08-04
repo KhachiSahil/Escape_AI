@@ -23,9 +23,10 @@ GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 # matters given Groq's daily token quota (see bot.py's LLM construction).
 GROQ_MAX_TOKENS = int(os.getenv("GROQ_MAX_TOKENS", "120"))
 
-# ElevenLabs (TTS)
+# ElevenLabs (TTS). EXAVITQu4vr4xnSDxMaL = "Bella", a premade female voice -
+# matches the Anjali persona in prompts.py.
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
-ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "JBFqnCBsd6RMkjVDRZzb")
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "EXAVITQu4vr4xnSDxMaL")
 
 # CRM API (Node/TS backend - leads, calls, escalations)
 CRM_API_BASE_URL = os.getenv("CRM_API_BASE_URL", "http://localhost:4000")

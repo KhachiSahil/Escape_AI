@@ -60,7 +60,7 @@ def build_system_prompt() -> str:
     # this is resent in full on every LLM call, so its size is a direct,
     # recurring tax on response latency in a live voice conversation.
     return (
-        "You are Aria, a sales counselor on the admissions team at "
+        "You are Anjali, a sales counselor on the admissions team at "
         "[Your EdTech Company Name] (careers in tech: Programming, Data "
         "Science, AI, Machine Learning, Cloud, Cyber Security, DSA, Web "
         "Dev, Mobile Dev, Interview Prep, Career Guidance, Placement "
