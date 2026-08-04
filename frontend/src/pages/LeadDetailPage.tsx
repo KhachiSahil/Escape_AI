@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError } from '../lib/api'
@@ -6,6 +6,9 @@ import { useAuth } from '../context/useAuth'
 import { LoadingState } from '../components/LoadingState'
 import { ErrorState } from '../components/ErrorState'
 import { StatusBadge, ScoreBadge } from '../components/LeadStatusBadge'
+import { Card, CardHeader } from '../components/ui/Card'
+import { Button } from '../components/ui/Button'
+import { FieldError, Label, Select, TextInput, Textarea } from '../components/ui/Field'
 import type { LeadDetail, LeadStatus, UpdateLeadInput } from '../types/models'
 
 interface LogCallInput {
@@ -22,6 +25,24 @@ const STATUS_OPTIONS: LeadStatus[] = [
   'LOST',
   'DORMANT',
 ]
+
+function DetailRow({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div>
+      <dt className="text-xs font-medium text-[var(--text-muted)]">{label}</dt>
+      <dd className="mt-0.5 text-sm text-[var(--text-primary)]">{value}</dd>
+    </div>
+  )
+}
+
+function ScoreRow({ label, value }: { label: string; value: number | null }) {
+  return (
+    <div className="flex items-center justify-between text-sm">
+      <span className="text-[var(--text-secondary)]">{label}</span>
+      <span className="font-medium text-[var(--text-primary)]">{value ?? '—'}</span>
+    </div>
+  )
+}
 
 export function LeadDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -94,8 +115,22 @@ export function LeadDetailPage() {
     })
   }
 
-  if (query.isLoading) return <LoadingState label="Loading lead…" />
-  if (query.isError || !query.data) return <ErrorState message="Could not load this lead." />
+  if (query.isLoading) {
+    return (
+      <div className="mx-auto max-w-3xl p-6">
+        <Card>
+          <LoadingState label="Loading lead…" />
+        </Card>
+      </div>
+    )
+  }
+  if (query.isError || !query.data) {
+    return (
+      <div className="mx-auto max-w-3xl p-6">
+        <ErrorState message="Could not load this lead." />
+      </div>
+    )
+  }
 
   const lead = query.data
   const canEdit =
@@ -104,72 +139,66 @@ export function LeadDetailPage() {
     (employee?.role === 'SALES_EMPLOYEE' && lead.assignedEmployeeId === employee.id)
 
   return (
-    <div className="mx-auto max-w-3xl p-6">
-      <Link to="/leads" className="text-sm text-blue-600 hover:underline">
+    <div className="mx-auto max-w-3xl space-y-4 p-6">
+      <Link
+        to="/leads"
+        className="inline-flex items-center gap-1 text-sm text-[var(--brand)] hover:underline"
+      >
         ← Back to leads
       </Link>
 
-      <div className="mt-4 rounded-lg border border-gray-200 bg-white p-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-gray-900">{lead.name ?? 'Unnamed lead'}</h1>
+      <Card>
+        <div className="flex items-center justify-between gap-4 border-b px-5 py-4" style={{ borderColor: 'var(--border-hairline)' }}>
+          <h1 className="text-lg font-semibold text-[var(--text-primary)]">{lead.name ?? 'Unnamed lead'}</h1>
           <div className="flex gap-2">
             <StatusBadge status={lead.status} />
             {lead.leadScore && <ScoreBadge score={lead.leadScore} />}
           </div>
         </div>
 
-        <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-          <dt className="text-gray-500">Phone</dt>
-          <dd>{lead.phone}</dd>
-          <dt className="text-gray-500">Email</dt>
-          <dd>{lead.email ?? '—'}</dd>
-          <dt className="text-gray-500">Course interested</dt>
-          <dd>{lead.courseInterested ?? '—'}</dd>
-          <dt className="text-gray-500">Profession</dt>
-          <dd>{lead.profession ?? '—'}</dd>
-          <dt className="text-gray-500">Budget</dt>
-          <dd>{lead.budget ?? '—'}</dd>
-          <dt className="text-gray-500">Assigned to</dt>
-          <dd>{lead.assignedEmployee?.name ?? 'Unassigned'}</dd>
-          <dt className="text-gray-500">Notes</dt>
-          <dd className="whitespace-pre-wrap">{lead.notes ?? '—'}</dd>
-        </dl>
-
-        <div className="mt-4 border-t border-gray-100 pt-4">
-          <h2 className="text-sm font-medium text-gray-900">
-            Composite score{' '}
-            <span className="font-normal text-gray-500">
-              {lead.compositeScore != null ? lead.compositeScore.toFixed(1) : '— not enough signal yet'}
-            </span>
-          </h2>
-          <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-600">
-            <dt>Budget</dt>
-            <dd>{lead.budgetScore ?? '—'}</dd>
-            <dt>Urgency</dt>
-            <dd>{lead.urgencyScore ?? '—'}</dd>
-            <dt>Interest</dt>
-            <dd>{lead.interestScore ?? '—'}</dd>
-            <dt>Buying signals</dt>
-            <dd>{lead.buyingSignalsScore ?? '—'}</dd>
-            <dt>Course fit</dt>
-            <dd>{lead.courseFitScore ?? '—'}</dd>
-            <dt>Call quality</dt>
-            <dd>{lead.callQualityScore ?? '—'}</dd>
-          </dl>
+        <div className="grid grid-cols-2 gap-x-6 gap-y-4 px-5 py-5 sm:grid-cols-3">
+          <DetailRow label="Phone" value={lead.phone} />
+          <DetailRow label="Email" value={lead.email ?? '—'} />
+          <DetailRow label="Course interested" value={lead.courseInterested ?? '—'} />
+          <DetailRow label="Profession" value={lead.profession ?? '—'} />
+          <DetailRow label="Budget" value={lead.budget ?? '—'} />
+          <DetailRow label="Assigned to" value={lead.assignedEmployee?.name ?? 'Unassigned'} />
         </div>
+        <div className="border-t px-5 py-4" style={{ borderColor: 'var(--border-hairline)' }}>
+          <DetailRow label="Notes" value={<span className="whitespace-pre-wrap">{lead.notes ?? '—'}</span>} />
+        </div>
+      </Card>
 
-        {canEdit && (
-          <form onSubmit={handleSubmit} className="mt-6 space-y-3 border-t border-gray-100 pt-4">
-            <h2 className="text-sm font-medium text-gray-900">Update lead</h2>
+      <Card>
+        <CardHeader
+          title="Composite score"
+          description={
+            lead.compositeScore != null
+              ? lead.compositeScore.toFixed(1)
+              : 'Not enough signal yet'
+          }
+        />
+        <div className="grid grid-cols-2 gap-x-6 gap-y-2 px-5 py-4">
+          <ScoreRow label="Budget" value={lead.budgetScore} />
+          <ScoreRow label="Urgency" value={lead.urgencyScore} />
+          <ScoreRow label="Interest" value={lead.interestScore} />
+          <ScoreRow label="Buying signals" value={lead.buyingSignalsScore} />
+          <ScoreRow label="Course fit" value={lead.courseFitScore} />
+          <ScoreRow label="Call quality" value={lead.callQualityScore} />
+        </div>
+      </Card>
+
+      {canEdit && (
+        <Card>
+          <CardHeader title="Update lead" />
+          <form onSubmit={handleSubmit} className="space-y-3 px-5 py-4">
             <div>
-              <label htmlFor="status" className="block text-xs font-medium text-gray-500">
-                Status
-              </label>
-              <select
+              <Label htmlFor="status">Status</Label>
+              <Select
                 id="status"
                 value={status}
                 onChange={(e) => setStatus(e.target.value as LeadStatus)}
-                className="mt-1 rounded border border-gray-300 px-2 py-1 text-sm"
+                className="w-full sm:w-64"
               >
                 <option value="">— unchanged —</option>
                 {STATUS_OPTIONS.map((s) => (
@@ -177,41 +206,41 @@ export function LeadDetailPage() {
                     {s.replace(/_/g, ' ')}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
             <div>
-              <label htmlFor="notes" className="block text-xs font-medium text-gray-500">
-                Notes
-              </label>
-              <textarea
+              <Label htmlFor="notes">Notes</Label>
+              <Textarea
                 id="notes"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 rows={3}
-                className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm"
+                className="w-full"
               />
             </div>
-            {formError && <p className="text-sm text-red-600">{formError}</p>}
-            <button
-              type="submit"
-              disabled={mutation.isPending}
-              className="rounded bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-            >
+            {formError && <FieldError>{formError}</FieldError>}
+            <Button type="submit" variant="primary" disabled={mutation.isPending}>
               {mutation.isPending ? 'Saving…' : 'Save'}
-            </button>
+            </Button>
           </form>
-        )}
+        </Card>
+      )}
 
-        <div className="mt-6 border-t border-gray-100 pt-4">
-          <h2 className="text-sm font-medium text-gray-900">Call history</h2>
+      <Card>
+        <CardHeader title="Call history" />
+        <div className="px-5 py-4">
           {lead.calls.length === 0 ? (
-            <p className="mt-2 text-sm text-gray-500">No calls yet.</p>
+            <p className="text-sm text-[var(--text-secondary)]">No calls yet.</p>
           ) : (
-            <ul className="mt-2 space-y-2 text-sm">
+            <ul className="space-y-2">
               {lead.calls.map((call) => (
-                <li key={call.id} className="rounded border border-gray-100 p-2">
-                  <span className="font-medium">{call.callType}</span> —{' '}
-                  {call.shortSummary ?? 'No summary'}
+                <li
+                  key={call.id}
+                  className="rounded-lg border p-3 text-sm"
+                  style={{ borderColor: 'var(--border-hairline)' }}
+                >
+                  <span className="font-medium text-[var(--text-primary)]">{call.callType}</span>{' '}
+                  <span className="text-[var(--text-secondary)]">— {call.shortSummary ?? 'No summary'}</span>
                   {call.recordingUrl && (
                     <audio controls src={call.recordingUrl} className="mt-2 w-full">
                       Your browser does not support audio playback.
@@ -223,58 +252,57 @@ export function LeadDetailPage() {
           )}
 
           {canEdit && (
-            <form onSubmit={handleLogCall} className="mt-4 space-y-3 border-t border-gray-100 pt-4">
-              <h3 className="text-xs font-medium text-gray-500">Log a call you handled</h3>
+            <form onSubmit={handleLogCall} className="mt-4 space-y-3 border-t pt-4" style={{ borderColor: 'var(--border-hairline)' }}>
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                Log a call you handled
+              </h3>
               <div>
-                <label htmlFor="callSummary" className="block text-xs font-medium text-gray-500">
-                  Summary
-                </label>
-                <textarea
+                <Label htmlFor="callSummary">Summary</Label>
+                <Textarea
                   id="callSummary"
                   value={callSummary}
                   onChange={(e) => setCallSummary(e.target.value)}
                   rows={2}
-                  className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-sm"
+                  className="w-full"
                 />
               </div>
               <div>
-                <label htmlFor="callDuration" className="block text-xs font-medium text-gray-500">
-                  Duration (seconds, optional)
-                </label>
-                <input
+                <Label htmlFor="callDuration">Duration (seconds, optional)</Label>
+                <TextInput
                   id="callDuration"
                   type="number"
                   min={0}
                   value={callDuration}
                   onChange={(e) => setCallDuration(e.target.value)}
-                  className="mt-1 w-32 rounded border border-gray-300 px-2 py-1 text-sm"
+                  className="w-32"
                 />
               </div>
-              {callFormError && <p className="text-sm text-red-600">{callFormError}</p>}
-              <button
-                type="submit"
-                disabled={logCallMutation.isPending}
-                className="rounded bg-gray-800 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-900 disabled:opacity-50"
-              >
+              {callFormError && <FieldError>{callFormError}</FieldError>}
+              <Button type="submit" variant="secondary" disabled={logCallMutation.isPending}>
                 {logCallMutation.isPending ? 'Logging…' : 'Log call'}
-              </button>
+              </Button>
             </form>
           )}
         </div>
+      </Card>
 
-        {lead.escalations.length > 0 && (
-          <div className="mt-6 border-t border-gray-100 pt-4">
-            <h2 className="text-sm font-medium text-gray-900">Escalations</h2>
-            <ul className="mt-2 space-y-2 text-sm">
-              {lead.escalations.map((escalation) => (
-                <li key={escalation.id} className="rounded border border-gray-100 p-2">
-                  <span className="font-medium">{escalation.reason}</span> — {escalation.status}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </div>
+      {lead.escalations.length > 0 && (
+        <Card>
+          <CardHeader title="Escalations" />
+          <ul className="space-y-2 px-5 py-4">
+            {lead.escalations.map((escalation) => (
+              <li
+                key={escalation.id}
+                className="rounded-lg border p-3 text-sm"
+                style={{ borderColor: 'var(--border-hairline)' }}
+              >
+                <span className="font-medium text-[var(--text-primary)]">{escalation.reason}</span>{' '}
+                <span className="text-[var(--text-secondary)]">— {escalation.status}</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
     </div>
   )
 }

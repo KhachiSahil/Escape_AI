@@ -2,6 +2,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../lib/api'
 import { LoadingState } from '../../components/LoadingState'
 import { ErrorState } from '../../components/ErrorState'
+import { Card } from '../../components/ui/Card'
+import { Select } from '../../components/ui/Field'
+import { Table, Thead, Th, Tr, Td } from '../../components/ui/Table'
 import type { Employee, EmployeeStatus, EmployeePerformance } from '../../types/models'
 
 const STATUS_OPTIONS: EmployeeStatus[] = ['ACTIVE', 'ON_LEAVE', 'INACTIVE']
@@ -34,9 +37,21 @@ export function AdminEmployeesPage() {
     },
   })
 
-  if (employeesQuery.isLoading) return <LoadingState label="Loading employees…" />
+  if (employeesQuery.isLoading) {
+    return (
+      <div className="mx-auto max-w-6xl p-6">
+        <Card>
+          <LoadingState label="Loading employees…" />
+        </Card>
+      </div>
+    )
+  }
   if (employeesQuery.isError || !employeesQuery.data) {
-    return <ErrorState message="Could not load employees." />
+    return (
+      <div className="mx-auto max-w-6xl p-6">
+        <ErrorState message="Could not load employees." />
+      </div>
+    )
   }
 
   const performanceById = new Map(
@@ -44,46 +59,46 @@ export function AdminEmployeesPage() {
   )
 
   return (
-    <div className="mx-auto max-w-5xl p-6">
-      <h1 className="mb-6 text-xl font-semibold text-gray-900">Employees</h1>
-      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
-        <table className="w-full border-collapse text-left text-sm">
-          <thead>
-            <tr className="border-b border-gray-200 text-gray-500">
-              <th className="p-3 font-medium">Name</th>
-              <th className="p-3 font-medium">Email</th>
-              <th className="p-3 font-medium">Role</th>
-              <th className="p-3 font-medium">Status</th>
-              <th className="p-3 font-medium">Assigned leads</th>
-              <th className="p-3 font-medium">Status change</th>
-            </tr>
-          </thead>
+    <div className="mx-auto max-w-6xl p-6">
+      <h1 className="mb-6 text-xl font-semibold text-[var(--text-primary)]">Employees</h1>
+      <Card className="overflow-hidden">
+        <Table>
+          <Thead>
+            <Th>Name</Th>
+            <Th>Email</Th>
+            <Th>Role</Th>
+            <Th>Status</Th>
+            <Th>Assigned leads</Th>
+            <Th>Status change</Th>
+          </Thead>
           <tbody>
             {employeesQuery.data.map((employee) => {
               const perf = performanceById.get(employee.id)
+              const online = onlineIds.has(employee.id)
               return (
-                <tr key={employee.id} className="border-b border-gray-100">
-                  <td className="p-3">
-                    <span
-                      className={`mr-2 inline-block h-2 w-2 rounded-full ${
-                        onlineIds.has(employee.id) ? 'bg-green-500' : 'bg-gray-300'
-                      }`}
-                      title={onlineIds.has(employee.id) ? 'Online' : 'Offline'}
-                    />
-                    {employee.name}
-                  </td>
-                  <td className="p-3">{employee.email}</td>
-                  <td className="p-3">{employee.role}</td>
-                  <td className="p-3">{employee.status}</td>
-                  <td className="p-3">
+                <Tr key={employee.id}>
+                  <Td className="font-medium">
+                    <span className="flex items-center gap-2">
+                      <span
+                        className="h-2 w-2 shrink-0 rounded-full"
+                        style={{ backgroundColor: online ? 'var(--status-good)' : 'var(--border-strong)' }}
+                        title={online ? 'Online' : 'Offline'}
+                      />
+                      {employee.name}
+                    </span>
+                  </Td>
+                  <Td className="text-[var(--text-secondary)]">{employee.email}</Td>
+                  <Td className="text-[var(--text-secondary)]">{employee.role}</Td>
+                  <Td className="text-[var(--text-secondary)]">{employee.status}</Td>
+                  <Td className="text-[var(--text-secondary)]">
                     {perf
                       ? `${perf.totalAssigned} total (${Object.entries(perf.byStatus)
                           .map(([status, count]) => `${status}: ${count}`)
                           .join(', ') || 'none'})`
                       : '—'}
-                  </td>
-                  <td className="p-3">
-                    <select
+                  </Td>
+                  <Td>
+                    <Select
                       value={employee.status}
                       onChange={(e) =>
                         statusMutation.mutate({
@@ -91,21 +106,21 @@ export function AdminEmployeesPage() {
                           status: e.target.value as EmployeeStatus,
                         })
                       }
-                      className="rounded border border-gray-300 px-2 py-1 text-sm"
+                      className="w-auto"
                     >
                       {STATUS_OPTIONS.map((status) => (
                         <option key={status} value={status}>
                           {status}
                         </option>
                       ))}
-                    </select>
-                  </td>
-                </tr>
+                    </Select>
+                  </Td>
+                </Tr>
               )
             })}
           </tbody>
-        </table>
-      </div>
+        </Table>
+      </Card>
     </div>
   )
 }

@@ -2,6 +2,8 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/useAuth'
 import { ApiError } from '../lib/api'
+import { Button } from '../components/ui/Button'
+import { FieldError, Label, TextInput } from '../components/ui/Field'
 
 export function LoginPage() {
   const { login } = useAuth()
@@ -26,47 +28,53 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50">
-      <form
-        onSubmit={handleSubmit}
-        className="w-full max-w-sm space-y-4 rounded-lg border border-gray-200 bg-white p-8 shadow-sm"
-      >
-        <h1 className="text-xl font-semibold text-gray-900">Escape AI CRM</h1>
-        <div>
-          <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-            Email
-          </label>
-          <input
-            id="email"
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-          />
+    <div className="flex min-h-screen items-center justify-center bg-[var(--surface-page)] px-4">
+      <div className="w-full max-w-sm">
+        <div className="mb-6 flex flex-col items-center gap-3">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--brand)] text-lg font-bold text-[var(--brand-ink)] shadow-[var(--shadow-md)]">
+            E
+          </div>
+          <div className="text-center">
+            <h1 className="text-lg font-semibold text-[var(--text-primary)]">Escape CRM</h1>
+            <p className="text-sm text-[var(--text-secondary)]">Sign in to your account</p>
+          </div>
         </div>
-        <div>
-          <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-            Password
-          </label>
-          <input
-            id="password"
-            type="password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
-          />
-        </div>
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        <button
-          type="submit"
-          disabled={submitting}
-          className="w-full rounded bg-blue-600 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+
+        <form
+          onSubmit={handleSubmit}
+          className="space-y-4 rounded-xl border bg-[var(--surface-1)] p-8 shadow-[var(--shadow-md)]"
+          style={{ borderColor: 'var(--border-hairline)' }}
         >
-          {submitting ? 'Signing in…' : 'Sign in'}
-        </button>
-      </form>
+          <div>
+            <Label htmlFor="email">Email</Label>
+            <TextInput
+              id="email"
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full"
+            />
+          </div>
+          <div>
+            <Label htmlFor="password">Password</Label>
+            <TextInput
+              id="password"
+              type="password"
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full"
+            />
+          </div>
+          {error && <FieldError>{error}</FieldError>}
+          <Button type="submit" variant="primary" disabled={submitting} className="w-full">
+            {submitting ? 'Signing in…' : 'Sign in'}
+          </Button>
+        </form>
+      </div>
     </div>
   )
 }

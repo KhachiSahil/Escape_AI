@@ -1,5 +1,168 @@
 @import "tailwindcss";
 
+/*
+ * Design tokens — light values are the default; dark values apply both
+ * under the OS `prefers-color-scheme: dark` setting and under an explicit
+ * `data-theme="dark"` stamp on <html> (the in-app toggle). The toggle scope
+ * wins over the OS setting in both directions, matching the palette
+ * reference's documented pattern.
+ */
+:root {
+  color-scheme: light;
+
+  --surface-page: #f9f9f7;
+  --surface-1: #fcfcfb;
+  --surface-2: #f3f3f0;
+  --surface-hover: #eeeeea;
+
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+
+  --border-hairline: rgba(11, 11, 11, 0.1);
+  --border-strong: #c3c2b7;
+
+  --brand: #2a78d6;
+  --brand-hover: #1c5cab;
+  --brand-ink: #ffffff;
+  --brand-tint: #e8f0fc;
+
+  --status-good: #0ca30c;
+  --status-good-tint: #e6f6e6;
+  --status-warning: #b8790f;
+  --status-warning-tint: #fdf1dc;
+  --status-serious: #c1552f;
+  --status-serious-tint: #fbe9e1;
+  --status-critical: #d03b3b;
+  --status-critical-tint: #fbe4e4;
+
+  --shadow-sm: 0 1px 2px rgba(11, 11, 11, 0.04);
+  --shadow-md: 0 2px 8px rgba(11, 11, 11, 0.06), 0 1px 2px rgba(11, 11, 11, 0.04);
+  --shadow-lg: 0 12px 32px rgba(11, 11, 11, 0.10), 0 2px 6px rgba(11, 11, 11, 0.05);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+
+    --surface-page: #0d0d0d;
+    --surface-1: #171716;
+    --surface-2: #1f1f1d;
+    --surface-hover: #262623;
+
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+
+    --border-hairline: rgba(255, 255, 255, 0.1);
+    --border-strong: #383835;
+
+    --brand: #3987e5;
+    --brand-hover: #5598e7;
+    --brand-ink: #ffffff;
+    --brand-tint: rgba(57, 135, 229, 0.14);
+
+    --status-good: #0ca30c;
+    --status-good-tint: rgba(12, 163, 12, 0.14);
+    --status-warning: #d99a2b;
+    --status-warning-tint: rgba(250, 178, 25, 0.14);
+    --status-serious: #e08a63;
+    --status-serious-tint: rgba(236, 131, 90, 0.14);
+    --status-critical: #e66767;
+    --status-critical-tint: rgba(208, 59, 59, 0.14);
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --surface-page: #0d0d0d;
+  --surface-1: #171716;
+  --surface-2: #1f1f1d;
+  --surface-hover: #262623;
+
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #898781;
+
+  --border-hairline: rgba(255, 255, 255, 0.1);
+  --border-strong: #383835;
+
+  --brand: #3987e5;
+  --brand-hover: #5598e7;
+  --brand-ink: #ffffff;
+  --brand-tint: rgba(57, 135, 229, 0.14);
+
+  --status-good: #0ca30c;
+  --status-good-tint: rgba(12, 163, 12, 0.14);
+  --status-warning: #d99a2b;
+  --status-warning-tint: rgba(250, 178, 25, 0.14);
+  --status-serious: #e08a63;
+  --status-serious-tint: rgba(236, 131, 90, 0.14);
+  --status-critical: #e66767;
+  --status-critical-tint: rgba(208, 59, 59, 0.14);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+* {
+  border-color: var(--border-hairline);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
 body {
   margin: 0;
+  background: var(--surface-page);
+  color: var(--text-primary);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--brand-tint);
+}
+
+/* Thin, unobtrusive scrollbars that respect the theme. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+.skeleton {
+  background: var(--surface-2);
+  border-radius: 6px;
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.toast-enter {
+  animation: toast-in 0.18s ease-out;
 }

@@ -888,3 +888,75 @@ an actual voice call confirming the model no longer self-identifies as an
 AI or narrates tool calls in practice — that needs a live Deepgram/Groq/
 ElevenLabs session the user can exercise; this is stated rather than
 claimed as tested.
+
+### 2026-08-04 — Frontend visual redesign: design tokens, sidebar shell, dark mode
+
+**Context:** User asked for the frontend to be styled "professionally and
+full production ready" — the prior UI was default Tailwind grays with a
+thin top-nav bar and no design system. Confirmed scope via a couple of
+quick questions: full visual redesign (not a light touch-up) including
+dark mode support.
+
+**Design tokens (`index.css`):** replaced the bare Tailwind import with a
+full CSS custom-property system — surfaces, text (primary/secondary/
+muted), borders, a brand color, a status palette (good/warning/serious/
+critical with tint backgrounds), and shadow scale. Light values live on
+`:root`; dark values apply both under `prefers-color-scheme: dark` (guarded
+with `:not([data-theme="light"])`) and under an explicit `data-theme="dark"`
+stamp, so an in-app toggle always wins over the OS setting — the exact
+pattern documented in the `dataviz` skill's palette reference, reused here
+for the whole UI rather than just charts. `src/lib/chartColors.ts`'s
+existing validated categorical palette (from the Phase 2c `dataviz` pass)
+was left untouched and is now actually wired to dark mode — analytics bar
+charts previously always called `categoricalColor(index)` with the light
+palette; `AdminAnalyticsPage` now tracks the live theme via a new
+`useTheme` hook and passes `isDark` through, so chart fills/gridlines/axis
+ticks/labels all switch with the rest of the UI instead of staying light
+in dark mode.
+
+**Dark mode toggle (`useTheme.ts`):** tracks the effective theme (an
+explicit `localStorage`-persisted choice, or the live OS setting when none
+is stored), listens for OS theme changes only while no explicit choice
+exists, and applies/removes the `data-theme` attribute on `<html>`.
+
+**Shared UI primitives (`components/ui/`):** `Card`/`CardHeader`, `Button`
+(primary/secondary/ghost/danger × sm/md), `Field.tsx` (`Label`/`TextInput`/
+`Select`/`Textarea`/`FieldError`), `Table`/`Thead`/`Th`/`Tr`/`Td`,
+`EmptyState`, and a small hand-rolled icon set (`icons.tsx` - no new icon
+library dependency). Every page's ad-hoc `rounded-lg border border-gray-200
+bg-white` card markup and raw `<table>` markup was replaced with these,
+so every card/table/badge/input across the app now shares one visual
+language instead of each page hand-rolling its own Tailwind gray/blue/red
+utility classes (confirmed zero raw Tailwind color utilities remain
+anywhere in `src/` after the pass).
+
+**Layout (`AppLayout.tsx`):** replaced the thin top-nav bar with a proper
+sidebar shell (logo, grouped nav sections, user identity + theme toggle +
+logout pinned at the bottom) on desktop, collapsing to a hamburger-driven
+slide-down panel on mobile — the app previously had no mobile layout
+handling at all.
+
+**Badges (`LeadStatusBadge.tsx`):** re-expressed as tint/ink CSS-variable
+pairs instead of raw Tailwind `bg-*-100 text-*-700` combinations, so status/
+score colors now correctly invert in dark mode instead of staying a
+light-mode-only pastel.
+
+**Every page restyled** (`LoginPage`, `LeadsListPage`, `LeadDetailPage`,
+`CallsPage`, `AdminEmployeesPage`, `AdminEscalationsPage`,
+`AdminAuditLogPage`, `AdminAnalyticsPage`) to use the new primitives -
+logic/data-fetching/mutations in every page are unchanged, this was a
+purely visual/markup pass. `LoadingState` now renders skeleton placeholders
+instead of plain "Loading…" text; `ErrorState` is a proper bordered card
+with an icon instead of a bare red line of text.
+
+**Verified this session:** `tsc -b` clean, `vite build` clean (production
+CSS bundle confirmed to contain the new design tokens), `eslint .` clean
+(zero warnings, down from the pre-existing baseline), all 5 existing
+frontend tests pass unchanged (no test asserts on markup/class names, so
+none needed updating). **Not verified live**: no browser-automation tool
+was available in this environment to capture a real screenshot - visual
+correctness was verified by exhaustively grepping for any remaining raw
+Tailwind color utility (zero found) and by re-reading every restyled file
+for token-consistency, not by looking at a rendered screenshot. The user
+should give it a visual pass in their own browser (including toggling dark
+mode and checking the mobile nav) before considering this fully done.

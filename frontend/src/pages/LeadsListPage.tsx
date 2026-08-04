@@ -5,6 +5,8 @@ import { useAuth } from '../context/useAuth'
 import { LeadTable } from '../components/LeadTable'
 import { LoadingState } from '../components/LoadingState'
 import { ErrorState } from '../components/ErrorState'
+import { Card } from '../components/ui/Card'
+import { Select } from '../components/ui/Field'
 import type { Lead, LeadScore } from '../types/models'
 
 const SCORE_OPTIONS: LeadScore[] = ['VERY_HOT', 'HOT', 'WARM', 'COLD', 'RE_ENGAGE', 'DORMANT', 'LOST']
@@ -55,16 +57,21 @@ export function LeadsListPage() {
   }, [query.data, scoreFilter, sortBy, followUpOnly])
 
   return (
-    <div className="mx-auto max-w-5xl p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-gray-900">
-          {isEmployeeOnly ? 'My Assigned Leads' : 'All Leads'}
-        </h1>
-        <div className="flex items-center gap-2">
-          <select
+    <div className="mx-auto max-w-6xl p-6">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold text-[var(--text-primary)]">
+            {isEmployeeOnly ? 'My Assigned Leads' : 'All Leads'}
+          </h1>
+          <p className="mt-0.5 text-sm text-[var(--text-secondary)]">
+            {leads ? `${leads.length} lead${leads.length === 1 ? '' : 's'}` : ' '}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Select
             value={scoreFilter}
             onChange={(e) => setScoreFilter(e.target.value as LeadScore | '')}
-            className="rounded border border-gray-300 px-2 py-1.5 text-sm"
+            className="w-auto"
           >
             <option value="">All scores</option>
             {SCORE_OPTIONS.map((score) => (
@@ -72,33 +79,38 @@ export function LeadsListPage() {
                 {score.replace(/_/g, ' ')}
               </option>
             ))}
-          </select>
-          <label className="flex items-center gap-1.5 text-sm text-gray-600">
+          </Select>
+          <label className="flex items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-2 text-sm text-[var(--text-secondary)]" style={{ borderColor: 'var(--border-hairline)' }}>
             <input
               type="checkbox"
               checked={followUpOnly}
               onChange={(e) => setFollowUpOnly(e.target.checked)}
+              className="accent-[var(--brand)]"
             />
-            Has upcoming follow-up
+            Upcoming follow-up
           </label>
-          <select
+          <Select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-            className="rounded border border-gray-300 px-2 py-1.5 text-sm"
+            className="w-auto"
           >
             <option value="">No sort</option>
             <option value="leadScore">Sort by lead score</option>
             <option value="compositeScore">Sort by composite score</option>
-          </select>
+          </Select>
         </div>
       </div>
 
-      {query.isLoading && <LoadingState label="Loading leads…" />}
+      {query.isLoading && (
+        <Card>
+          <LoadingState label="Loading leads…" />
+        </Card>
+      )}
       {query.isError && <ErrorState message="Could not load leads." />}
       {leads && (
-        <div className="rounded-lg border border-gray-200 bg-white">
+        <Card className="overflow-hidden">
           <LeadTable leads={leads} />
-        </div>
+        </Card>
       )}
     </div>
   )

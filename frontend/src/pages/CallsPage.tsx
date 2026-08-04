@@ -4,6 +4,10 @@ import { Link } from 'react-router-dom'
 import { api } from '../lib/api'
 import { LoadingState } from '../components/LoadingState'
 import { ErrorState } from '../components/ErrorState'
+import { Card } from '../components/ui/Card'
+import { EmptyState } from '../components/ui/EmptyState'
+import { Select } from '../components/ui/Field'
+import { Table, Thead, Th, Tr, Td } from '../components/ui/Table'
 import type { CallWithLead } from '../types/models'
 
 function startOfDay(date: Date): Date {
@@ -37,56 +41,54 @@ export function CallsPage() {
   const calls = useMemo(() => query.data ?? [], [query.data])
 
   return (
-    <div className="mx-auto max-w-5xl p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-gray-900">Calls</h1>
-        <select
-          value={range}
-          onChange={(e) => setRange(e.target.value as 'today' | 'all')}
-          className="rounded border border-gray-300 px-2 py-1.5 text-sm"
-        >
+    <div className="mx-auto max-w-6xl p-6">
+      <div className="mb-6 flex items-center justify-between gap-4">
+        <h1 className="text-xl font-semibold text-[var(--text-primary)]">Calls</h1>
+        <Select value={range} onChange={(e) => setRange(e.target.value as 'today' | 'all')} className="w-auto">
           <option value="today">Today</option>
           <option value="all">All time</option>
-        </select>
+        </Select>
       </div>
 
-      {query.isLoading && <LoadingState label="Loading calls…" />}
+      {query.isLoading && (
+        <Card>
+          <LoadingState label="Loading calls…" />
+        </Card>
+      )}
       {query.isError && <ErrorState message="Could not load calls." />}
       {!query.isLoading && !query.isError && (
-        <div className="rounded-lg border border-gray-200 bg-white">
+        <Card className="overflow-hidden">
           {calls.length === 0 ? (
-            <p className="p-6 text-sm text-gray-500">No calls in this range.</p>
+            <EmptyState title="No calls in this range" description="Try switching to All time." />
           ) : (
-            <table className="w-full border-collapse text-left text-sm">
-              <thead>
-                <tr className="border-b border-gray-200 text-gray-500">
-                  <th className="p-3 font-medium">Lead</th>
-                  <th className="p-3 font-medium">Type</th>
-                  <th className="p-3 font-medium">Summary</th>
-                  <th className="p-3 font-medium">Duration</th>
-                  <th className="p-3 font-medium">When</th>
-                </tr>
-              </thead>
+            <Table>
+              <Thead>
+                <Th>Lead</Th>
+                <Th>Type</Th>
+                <Th>Summary</Th>
+                <Th>Duration</Th>
+                <Th>When</Th>
+              </Thead>
               <tbody>
                 {calls.map((call) => (
-                  <tr key={call.id} className="border-b border-gray-100">
-                    <td className="p-3">
-                      <Link to={`/leads/${call.leadId}`} className="text-blue-600 hover:underline">
+                  <Tr key={call.id}>
+                    <Td className="font-medium">
+                      <Link to={`/leads/${call.leadId}`} className="text-[var(--brand)] hover:underline">
                         {call.lead.name ?? call.lead.phone}
                       </Link>
-                    </td>
-                    <td className="p-3">{call.callType}</td>
-                    <td className="p-3">{call.shortSummary ?? '—'}</td>
-                    <td className="p-3">
+                    </Td>
+                    <Td className="text-[var(--text-secondary)]">{call.callType}</Td>
+                    <Td className="text-[var(--text-secondary)]">{call.shortSummary ?? '—'}</Td>
+                    <Td className="tabular-nums text-[var(--text-secondary)]">
                       {call.durationSeconds != null ? `${call.durationSeconds}s` : '—'}
-                    </td>
-                    <td className="p-3">{new Date(call.createdAt).toLocaleString()}</td>
-                  </tr>
+                    </Td>
+                    <Td className="text-[var(--text-secondary)]">{new Date(call.createdAt).toLocaleString()}</Td>
+                  </Tr>
                 ))}
               </tbody>
-            </table>
+            </Table>
           )}
-        </div>
+        </Card>
       )}
     </div>
   )
