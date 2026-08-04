@@ -9,11 +9,15 @@ load_dotenv(override=True)
 # Deepgram (STT)
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 
-# Groq (LLM). llama-3.1-8b-instant trades some reasoning depth for
-# meaningfully faster generation - important for a live voice conversation
-# where every extra second of "thinking" reads as an unnatural pause.
+# Groq (LLM). llama-3.3-70b-versatile - live testing on this account found
+# llama-3.1-8b-instant carries a much lower per-key rate limit (6,000
+# tokens/min vs. 70b's 12,000/min here), and streamed time-to-first-token
+# was statistically the same between the two models on Groq's hardware in
+# clean conditions - so the smaller model bought no real speed and actively
+# throttled sooner in a real multi-turn conversation. Reproduced: TTFT
+# climbed from 0.6s to 10s+ within 8 consecutive requests on the 8b model.
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 # ElevenLabs (TTS)
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")

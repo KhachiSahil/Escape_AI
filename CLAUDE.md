@@ -1031,7 +1031,37 @@ applied). `pyright` shows the same 4 pre-existing errors from prior
 sessions (unrelated `api_key: str | None` typing and one `Mapping[str,
 Any]` argument-type mismatch in `request_human_escalation`) - none
 introduced by this change. `bot.py` and `prompts.py` import and run cleanly
-end-to-end. **Not verified live**: an actual voice call confirming the
-perceived latency improvement - that needs a real Deepgram/Groq/ElevenLabs
-session the user can exercise and judge subjectively; stated rather than
-claimed as tested.
+end-to-end.
+
+**Follow-up: item 2 (model swap) reverted after live testing found it was
+a regression.** User asked to test the fixes locally. No mic/audio I/O was
+available to drive a real voice call end-to-end, but every non-audio piece
+was verified live: real Groq API calls (streaming, matching bot.py's exact
+mode) measuring actual time-to-first-token, and real tool calls against a
+running `backend/api` + live Neon DB. Two concrete findings:
+- **`llama-3.1-8b-instant` has a much lower per-key rate limit on this
+  Groq account than `llama-3.3-70b-versatile`** (6,000 tokens/min vs.
+  12,000/min, confirmed via `x-ratelimit-limit-tokens` response headers) —
+  and streamed TTFT was statistically the same between the two models in
+  clean conditions (~0.3-0.35s average, 6-run sample each). Running 8
+  consecutive requests on the 8b model reproduced real, escalating
+  throttling: TTFT climbed from 0.6s to over 10s within the burst,
+  matching the exact "very late response" symptom being fixed. The 70b
+  model held steady (~0.25-0.55s TTFT) across an equivalent burst. **The
+  model swap bought no real speed and made rate-limit-driven latency
+  spikes materially more likely** — reverted `config.py`/`.env`/
+  `.env.example` back to `llama-3.3-70b-versatile`, with the finding
+  documented inline as a code comment so it isn't silently re-attempted.
+- **`schedule_callback`'s fire-and-forget fix confirmed working as
+  intended**: measured 0.001s to return to the caller against a live
+  server, vs. **`create_lead`'s already-known Neon cold-start effect
+  reproduced live** (4884ms server-side on the first request after DB
+  idle, 795ms on the second) — this matches the 2026-08-03 entry's
+  root-cause finding exactly; nothing new, and `create_lead` was already
+  a deliberate exception (stays blocking, per this session's own earlier
+  decision) rather than something this pass needed to re-fix.
+
+**Still not verified live**: an actual voice call over WebRTC confirming
+the *subjective* feel of the turn-detection change - that needs real
+mic/speaker I/O this environment doesn't have; the user should judge that
+part directly.
