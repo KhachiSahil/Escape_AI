@@ -21,7 +21,10 @@ GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 # Caps every response to a short, natural spoken reply instead of a long
 # multi-question ramble - also directly cuts per-turn token usage, which
 # matters given Groq's daily token quota (see bot.py's LLM construction).
-GROQ_MAX_TOKENS = int(os.getenv("GROQ_MAX_TOKENS", "120"))
+# Raised from 120 -> 200 after live reports of replies getting cut off
+# mid-sentence, which read as the agent losing the thread of the
+# conversation even though nothing was actually forgotten.
+GROQ_MAX_TOKENS = int(os.getenv("GROQ_MAX_TOKENS", "200"))
 
 # ElevenLabs (TTS). EXAVITQu4vr4xnSDxMaL = "Bella", a premade female voice -
 # matches the Anjali persona in prompts.py.
